@@ -10,30 +10,57 @@ jobs:
   infra-and-deploy:
     runs-on: ubuntu-latest
 
+    #steps:
+    #- name: Checkout Code
+    #  uses: actions/checkout@v4
+
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
+
+    # --- ADD THIS TEMPORARY VALIDATOR STEP ---
+    - name: Sanity Check GitHub Secret Injection
+      env:
+        CHECK_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        CHECK_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        echo "=== Debugging Secrets Resolution ==="
+        echo "AWS_ACCESS_KEY_ID length is: ${#CHECK_ID} characters"
+        echo "AWS_SECRET_ACCESS_KEY length is: ${#CHECK_SECRET} characters"
+        if [ ${#CHECK_ID} -eq 0 ] || [ ${#CHECK_SECRET} -eq 0 ]; then
+          echo "ERROR: GitHub is passing EMPTY strings! Double check your Repository Secrets panel."
+          exit 1
+        fi
+
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_wrapper: false
 
-    # --- INITIALIZATION ---
     - name: Terraform Init
       working-directory: ./terraform
       run: terraform init
 
-    # --- DRY RUN ANALYSIS ON PR ---
+    # --- STEP 3: DRY RUN PREVIEW ON PR ---
     - name: Terraform Plan (PR Validation)
       if: github.event_name == 'pull_request'
       working-directory: ./terraform
-      run: |
-        terraform plan \
-          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
-          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+      env:
+        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: terraform plan
 
-    # --- RUN THE DEPLOYMENT PRODUCTION REBUILD ---
+    # --- STEP 4: HARD APPLY ON PUSH/MERGE ---
+    #- name: Terraform Apply (Infrastructure Provisioning)
+    #  if: github.event_name == 'push'
+    #  working-directory: ./terraform
+    #  env:
+    #    TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    #    TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #  run: terraform apply -auto-approve
+
+    # --- STEP 4: HARD APPLY ON PUSH/MERGE ---
     - name: Terraform Apply (Infrastructure Provisioning)
       if: github.event_name == 'push'
       working-directory: ./terraform
@@ -42,11 +69,15 @@ jobs:
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-    # --- EXTRACT OUTPUT NETWORKS ---
+
+    # --- STEP 5: EXTRACT DYNAMIC PARAMETERS ---
     - name: Fetch Dynamic Infrastructure Parameters
       if: github.event_name == 'push'
       id: infra-vars
       working-directory: ./terraform
+      env:
+        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: |
         EC2_IP=$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=$EC2_IP" >> $GITHUB_ENV
@@ -55,7 +86,6 @@ jobs:
         terraform output -raw ec2_private_key >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
 
-    # --- COMPILE CONTAINER ENVIRONMENT ---
     - name: Login to Docker Hub
       if: github.event_name == 'push'
       uses: docker/login-action@v3
@@ -71,7 +101,6 @@ jobs:
         push: true
         tags: ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
 
-    # --- ROLLOUT APPLICATION CONTAINER REMOTE LIVE RUN ---
     - name: Rollout Application to Live Instance
       if: github.event_name == 'push'
       uses: appleboy/ssh-action@v1.0.3
