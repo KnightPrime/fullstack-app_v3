@@ -2,6 +2,19 @@ provider "aws" {
   region = var.aws_region
 }
 
+# 1. Generate a secure, dynamic cryptographic private key block
+resource "tls_private_key" "pipeline_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+# 2. Register the public key component with your AWS EC2 console region
+resource "aws_key_pair" "generated_key" {
+  key_name   = "pipeline-deployed-key"
+  public_key = tls_private_key.pipeline_key.public_key_openssh
+}
+
+
 # Security Group remains identical (allowing HTTP on 80 and SSH on 22)
 resource "aws_security_group" "app_sg" {
   name        = "app-security-group-docker"
@@ -22,7 +35,7 @@ resource "aws_security_group" "app_sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  
+
   ingress {
     from_port   = 5000
     to_port     = 5000
@@ -45,39 +58,24 @@ resource "aws_instance" "app_server" {
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   user_data_replace_on_change = true
 
+  key_name = aws_key_pair.generated_key.key_name
+
   user_data = <<-EOF
               #!/bin/bash
-              # CACHE BUSTER COMMENT TO FORCE TERRAFORM REBUILD: v2.0.1
               exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 
-              echo "=== Starting Fresh Docker Deployment Pipeline ==="
+              echo "=== Configuring Pipeline Host Environment ==="
 
-              # 1. Clear system apt updates cleanly
+              # 1. Update system dependencies and install Docker Engine
               while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock >/dev/null 2>&1 ; do sleep 5; done
               sudo apt-get update -y
-              sudo apt-get install -y docker.io git
+              sudo apt-get install -y docker.io
 
-              # 2. Boot up docker services on the host machine
+              # 2. Ensure docker initializes on boot
               sudo systemctl start docker
               sudo systemctl enable docker
 
-              # 3. Pull down the repository fresh from GitHub
-              cd /home/ubuntu
-              sudo rm -rf sample-app
-              git clone https://github.com/KnightPrime/fullstack-app_v2 app
-              cd app
-
-              echo "Building the multi-stage fullstack Docker image..."
-              sudo docker build -t fullstack-app:latest .
-
-              # 4. Stop any old instances and run the new container on port 80
-              sudo docker stop app-runtime 2>/dev/null || true
-              sudo docker rm app-runtime 2>/dev/null || true
-              
-              echo "Launching the fullstack app container..."
-              sudo docker run -d --name app-runtime --restart always -p 80:80 fullstack-app:latest
-
-              echo "=== Docker Deployment Pipeline Completed ==="
+              echo "=== Host Infrastructure Complete: Ready for Pipeline deployment ==="
               EOF
 
   tags = {
