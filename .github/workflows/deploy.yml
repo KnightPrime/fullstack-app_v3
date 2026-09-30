@@ -9,61 +9,54 @@ on:
 jobs:
   infra-and-deploy:
     runs-on: ubuntu-latest
-    
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # --- STEP 1: INITIALIZE TERRAFORM WITHOUT THE WRAPPER CORRUPTION ---
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_wrapper: false # CRITICAL: Fixes the wrapper bug so outputs stay clean
+        terraform_wrapper: false
 
     - name: Terraform Init
       working-directory: ./terraform
       run: terraform init
 
+    # --- STEP 3: DRY RUN PREVIEW ON PR ---
     - name: Terraform Plan (PR Validation)
       if: github.event_name == 'pull_request'
       working-directory: ./terraform
+      env:
+        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: terraform plan
 
-    # --- STEP 2: APPLY CHANGES ON MERGE / PUSH TO MAIN ---
-    #- name: Terraform Apply (Infrastructure Provisioning)
-    #  if: github.event_name == 'push'
-    #  working-directory: ./terraform
-    #  run: terraform apply -auto-approve
-
-      # --- STEP 2: APPLY CHANGES ON MERGE / PUSH ---
+    # --- STEP 4: HARD APPLY ON PUSH/MERGE ---
     - name: Terraform Apply (Infrastructure Provisioning)
       if: github.event_name == 'push'
       working-directory: ./terraform
       env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: terraform apply -auto-approve
- 
- # --- STEP 3: EXTRACT CLEAN INFRASTRUCTURE VARIABLES ---
+
+    # --- STEP 5: EXTRACT DYNAMIC PARAMETERS ---
     - name: Fetch Dynamic Infrastructure Parameters
       if: github.event_name == 'push'
       id: infra-vars
       working-directory: ./terraform
+      env:
+        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: |
-        # 1. Capture the clean, raw IP string
         EC2_IP=$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=$EC2_IP" >> $GITHUB_ENV
         
-        # 2. Extract the clean, raw Private Key string into an environment variable
         echo "EC2_SSH_KEY<<EOF" >> $GITHUB_ENV
         terraform output -raw ec2_private_key >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
 
-    # --- STEP 4: AUTHENTICATE & BUILD THE DOCKER CONTAINER ON GITHUB'S CLOUD ---
     - name: Login to Docker Hub
       if: github.event_name == 'push'
       uses: docker/login-action@v3
@@ -79,24 +72,16 @@ jobs:
         push: true
         tags: ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
 
-    # --- STEP 5: DEPLOY DIRECTLY TO EC2 USING THE FRESH KEY STRING ---
     - name: Rollout Application to Live Instance
       if: github.event_name == 'push'
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ env.EC2_PUBLIC_IP }}
         username: ubuntu
-        key: ${{ env.EC2_SSH_KEY }} # FIXED: Passes the string value natively, avoiding permission blocks
+        key: ${{ env.EC2_SSH_KEY }}
         script: |
-          # Wait for Docker to finish initializing if it's a completely fresh EC2 instance
           until sudo docker info >/dev/null 2>&1; do echo "Waiting for Docker Engine initialization..."; sleep 5; done
-          
-          # Pull the newly generated build image from your Docker Hub registry
           sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-          
-          # Clean out any old running containers safely
           sudo docker stop app-runtime 2>/dev/null || true
           sudo docker rm app-runtime 2>/dev/null || true
-          
-          # Spin up the app live on port 80
           sudo docker run -d --name app-runtime --restart always -p 80:80 ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest

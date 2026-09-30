@@ -1,6 +1,9 @@
 provider "aws" {
-  region = var.aws_region
+  region     = var.aws_region
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
 }
+
 
 # 1. Generate a secure, dynamic cryptographic private key block
 resource "tls_private_key" "pipeline_key" {
