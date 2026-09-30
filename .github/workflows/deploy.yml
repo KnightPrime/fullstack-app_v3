@@ -22,7 +22,7 @@ jobs:
     - name: Sanity Check GitHub Secret Injection
       env:
         CHECK_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        CHECK_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        CHECK_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY_ID}}
       run: |
         echo "=== Debugging Secrets Resolution ==="
         echo "AWS_ACCESS_KEY_ID length is: ${#CHECK_ID} characters"
