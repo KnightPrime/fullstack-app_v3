@@ -10,9 +10,28 @@ jobs:
   infra-and-deploy:
     runs-on: ubuntu-latest
 
+    #steps:
+    #- name: Checkout Code
+    #  uses: actions/checkout@v4
+
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
+
+    # --- ADD THIS TEMPORARY VALIDATOR STEP ---
+    - name: Sanity Check GitHub Secret Injection
+      env:
+        CHECK_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        CHECK_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        echo "=== Debugging Secrets Resolution ==="
+        echo "AWS_ACCESS_KEY_ID length is: ${#CHECK_ID} characters"
+        echo "AWS_SECRET_ACCESS_KEY length is: ${#CHECK_SECRET} characters"
+        if [ ${#CHECK_ID} -eq 0 ] || [ ${#CHECK_SECRET} -eq 0 ]; then
+          echo "ERROR: GitHub is passing EMPTY strings! Double check your Repository Secrets panel."
+          exit 1
+        fi
+
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -33,13 +52,23 @@ jobs:
       run: terraform plan
 
     # --- STEP 4: HARD APPLY ON PUSH/MERGE ---
+    #- name: Terraform Apply (Infrastructure Provisioning)
+    #  if: github.event_name == 'push'
+    #  working-directory: ./terraform
+    #  env:
+    #    TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    #    TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    #  run: terraform apply -auto-approve
+
+    # --- STEP 4: HARD APPLY ON PUSH/MERGE ---
     - name: Terraform Apply (Infrastructure Provisioning)
       if: github.event_name == 'push'
       working-directory: ./terraform
-      env:
-        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      run: terraform apply -auto-approve
+      run: |
+        terraform apply -auto-approve \
+          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+
 
     # --- STEP 5: EXTRACT DYNAMIC PARAMETERS ---
     - name: Fetch Dynamic Infrastructure Parameters
