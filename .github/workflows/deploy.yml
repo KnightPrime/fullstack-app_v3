@@ -2,9 +2,9 @@ name: Complete Zero-Dependency GitOps Pipeline
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ Dockerhub ]
   push:
-    branches: [ main ]
+    branches: [ Dockerhub ]
 
 jobs:
   infra-and-deploy:
