@@ -28,4 +28,16 @@ variable "instance_type" {
   description = "EC2 Instance Size"
   type        = string
   default     = "t3.micro"
+  
 }
+
+variable "aws_access_key" {
+  type        = string
+  description = "Passed dynamically from GitHub Actions"
+}
+
+variable "aws_secret_key" {
+  type        = string
+  description = "Passed dynamically from GitHub Actions"
+}
+
