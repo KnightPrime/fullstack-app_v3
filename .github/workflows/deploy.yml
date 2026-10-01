@@ -2,9 +2,9 @@ name: Complete Zero-Dependency GitOps Pipeline
 
 on:
   pull_request:
-    branches: [ main, docker ]
+    branches: [ Dockerhub ]
   push:
-    branches: [ main, docker ]
+    branches: [ Dockerhub ]
 
 jobs:
   infra-and-deploy:
@@ -69,16 +69,34 @@ jobs:
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-    # --- STEP 5: RUN PRODUCTION REBUILD ON PUSH ---
-    - name: Terraform Apply (Infrastructure Provisioning)
+    # --- NEW: PRACTICAL DRIFT AND REBUILD CHECK ---
+    - name: Determine If Infrastructure Rebuild Is Required
+      id: check-infra
       if: github.event_name == 'push'
+      working-directory: ./terraform
+      run: |
+        # Run plan with detailed exitcode. '|| tr' prevents the script from crashing when changes are found.
+        terraform plan -detailed-exitcode -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" > /dev/null 2>&1 && EXIT_CODE=$? || EXIT_CODE=$?
+        echo "Terraform Exit Code evaluated to: $EXIT_CODE"
+        
+        if [ $EXIT_CODE -eq 0 ]; then
+          echo "INFRA_CHANGED=false" >> $GITHUB_ENV
+          echo "✅ No infrastructure modifications required. Keeping hardware as-is."
+        else
+          echo "INFRA_CHANGED=true" >> $GITHUB_ENV
+          echo "⚠️ Infrastructure drift or structural updates detected. Processing configuration changes..."
+        fi
+
+    # --- STEP 5: RUN APPLY ONLY IF STRUCTURAL CHANGES EXIST ---
+    - name: Terraform Apply (Conditional Infrastructure Provisioning)
+      if: github.event_name == 'push' && env.INFRA_CHANGED == 'true'
       working-directory: ./terraform
       run: |
         terraform apply -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-
-    # --- STEP 6: EXTRACT NETWORKS ---
+          
+    # --- STEP 6: ALWAYS EXTRACT NETWORKS FOR THE APPLICATION CONTAINER ---
     - name: Fetch Dynamic Infrastructure Parameters
       if: github.event_name == 'push'
       id: infra-vars
@@ -90,8 +108,8 @@ jobs:
         echo "EC2_SSH_KEY<<EOF" >> $GITHUB_ENV
         terraform output -raw ec2_private_key >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
-
-    # --- STEP 7: COMPILE & DEPLOY CONTAINER ASSETS ---
+        
+    # --- STEP 7: BUILD APPLICATION DOCKER ASSETS AND ROLLOUT IN PLACE ---
     - name: Login to Docker Hub
       if: github.event_name == 'push'
       uses: docker/login-action@v3
@@ -107,7 +125,7 @@ jobs:
         push: true
         tags: ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
 
-    - name: Rollout Application to Live Instance
+    - name: Rollout Application to Live Instance (In-Place Container Swap)
       if: github.event_name == 'push'
       uses: appleboy/ssh-action@v1.0.3
       with:

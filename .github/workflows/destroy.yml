@@ -16,6 +16,7 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    # --- STEP 1: CONFIGURE AWS AUTHENTICATION ---
     - name: Configure AWS CLI Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -28,6 +29,7 @@ jobs:
       with:
         terraform_wrapper: false
 
+    # --- STEP 2: INITIALIZE THE SHARED STORAGE HOOK ---
     - name: Terraform Init
       working-directory: ./terraform
       run: |
@@ -36,6 +38,7 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
+    # --- STEP 3: EXECUTE SECURE TEARDOWN ---
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |

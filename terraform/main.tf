@@ -59,7 +59,8 @@ resource "aws_instance" "app_server" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.instance_type
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
-  user_data_replace_on_change = true
+  # COMMENTING OUT THIS LINE TO PREVENT EC2 RECREATION EVERYTIME:
+  #user_data_replace_on_change = true
 
   key_name = aws_key_pair.generated_key.key_name
 
