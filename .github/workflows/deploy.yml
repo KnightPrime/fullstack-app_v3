@@ -2,29 +2,65 @@ name: Complete Zero-Dependency GitOps Pipeline
 
 on:
   pull_request:
-    branches: [ Dockerhub ]
+    branches: [ main, docker ]
   push:
-    branches: [ Dockerhub ]
+    branches: [ main, docker ]
 
 jobs:
   infra-and-deploy:
     runs-on: ubuntu-latest
-    # FIXED: Requests explicit authorization to read environment-specific branch secrets
-    environment: development 
+    environment: development
+
+    env:
+      # CHOOSE A GLOBALLY UNIQUE NAME FOR YOUR TERRAFORM STATE BUCKET
+      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
+      AWS_REGION: "us-east-1"
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
+
+    # --- STEP 1: CONFIGURE AWS CLI CREDENTIALS ---
+    - name: Configure AWS CLI Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # --- STEP 2: AUTOMATICALLY VERIFY OR CREATE THE S3 STATE BUCKET ---
+    - name: Bootstrap S3 State Bucket
+      run: |
+        echo "Checking if S3 Bucket '${{ env.STATE_BUCKET_NAME }}' exists..."
+        if aws s3api head-bucket --bucket "${{ env.STATE_BUCKET_NAME }}" 2>/dev/null; then
+          echo "Bucket already exists. Proceeding..."
+        else
+          echo "Bucket not found. Creating fresh S3 state architecture bucket..."
+          aws s3api create-bucket \
+            --bucket "${{ env.STATE_BUCKET_NAME }}" \
+            --region "${{ env.AWS_REGION }}"
+            
+          echo "Enabling bucket versioning for safety rollbacks..."
+          aws s3api put-bucket-versioning \
+            --bucket "${{ env.STATE_BUCKET_NAME }}" \
+            --versioning-configuration Status=Enabled
+        fi
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_wrapper: false
 
-    - name: Terraform Init
+    # --- STEP 3: DYNAMICALLY INITIALIZE BACKEND USING PARTIAL CONFIGS ---
+    - name: Terraform Init (Dynamic S3 Backend Connection)
       working-directory: ./terraform
-      run: terraform init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ env.STATE_BUCKET_NAME }}" \
+          -backend-config="key=state/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
 
+    # --- STEP 4: DRY RUN PREVIEW ON PR ---
     - name: Terraform Plan (PR Validation)
       if: github.event_name == 'pull_request'
       working-directory: ./terraform
@@ -33,7 +69,7 @@ jobs:
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-    # --- FIXED: Credentials are now safely fetched at runtime via GitHub's encrypted vault ---
+    # --- STEP 5: RUN PRODUCTION REBUILD ON PUSH ---
     - name: Terraform Apply (Infrastructure Provisioning)
       if: github.event_name == 'push'
       working-directory: ./terraform
@@ -42,6 +78,7 @@ jobs:
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
+    # --- STEP 6: EXTRACT NETWORKS ---
     - name: Fetch Dynamic Infrastructure Parameters
       if: github.event_name == 'push'
       id: infra-vars
@@ -54,6 +91,7 @@ jobs:
         terraform output -raw ec2_private_key >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
 
+    # --- STEP 7: COMPILE & DEPLOY CONTAINER ASSETS ---
     - name: Login to Docker Hub
       if: github.event_name == 'push'
       uses: docker/login-action@v3
@@ -82,3 +120,4 @@ jobs:
           sudo docker stop app-runtime 2>/dev/null || true
           sudo docker rm app-runtime 2>/dev/null || true
           sudo docker run -d --name app-runtime --restart always -p 80:80 ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
+

@@ -1,17 +1,27 @@
 name: Destroy Infrastructure (Cleanup)
 
-# Using workflow_dispatch lets you trigger this pipeline manually from the GitHub dashboard
 on:
   workflow_dispatch:
 
 jobs:
   teardown:
     runs-on: ubuntu-latest
-    environment: development # Accesses your secure environment variables
+    environment: development
+
+    env:
+      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026" # Must exactly match deploy.yml
+      AWS_REGION: "us-east-1"
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
+
+    - name: Configure AWS CLI Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -20,13 +30,16 @@ jobs:
 
     - name: Terraform Init
       working-directory: ./terraform
-      run: terraform init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ env.STATE_BUCKET_NAME }}" \
+          -backend-config="key=state/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
 
-    # --- CRITICAL TEARDOWN STEP ---
-    # Connects to your S3 remote state map and cleanly destroys all active AWS components
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
         terraform destroy -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+
