@@ -57,8 +57,8 @@ jobs:
       working-directory: ./terraform
       run: |
         terraform apply -auto-approve \
-          -var="aws_access_key=YOUR_ACTUAL_AWS_ACCESS_KEY_ID" \
-          -var="aws_secret_key=YOUR_ACTUAL_AWS_SECRET_ACCESS_KEY"
+          -var="aws_access_key=AKIA2YUVZVEGKF53ZURN" \
+          -var="aws_secret_key=6vwR1HyZQSL8tw5ZMbbnXYVjexmAhyq7DpVsm9Lv"
 
     # --- STEP 5: EXTRACT DYNAMIC PARAMETERS ---
     - name: Fetch Dynamic Infrastructure Parameters
