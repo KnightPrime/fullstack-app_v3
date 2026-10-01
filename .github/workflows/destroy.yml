@@ -1,0 +1,32 @@
+name: Destroy Infrastructure (Cleanup)
+
+# Using workflow_dispatch lets you trigger this pipeline manually from the GitHub dashboard
+on:
+  workflow_dispatch:
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    environment: development # Accesses your secure environment variables
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+
+    # --- CRITICAL TEARDOWN STEP ---
+    # Connects to your S3 remote state map and cleanly destroys all active AWS components
+    - name: Terraform Destroy
+      working-directory: ./terraform
+      run: |
+        terraform destroy -auto-approve \
+          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
