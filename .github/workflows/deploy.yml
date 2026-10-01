@@ -42,23 +42,14 @@ jobs:
       working-directory: ./terraform
       run: terraform init
 
-    # --- STEP 3: DRY RUN PREVIEW ON PR ---
+        # --- STEP 3: DRY RUN PREVIEW ON PR ---
     - name: Terraform Plan (PR Validation)
       if: github.event_name == 'pull_request'
       working-directory: ./terraform
-      env:
-        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY_ID}}
-      run: terraform plan
-
-    # --- STEP 4: HARD APPLY ON PUSH/MERGE ---
-    #- name: Terraform Apply (Infrastructure Provisioning)
-    #  if: github.event_name == 'push'
-    #  working-directory: ./terraform
-    #  env:
-    #    TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    #    TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    #  run: terraform apply -auto-approve
+      run: |
+        terraform plan \
+          -var="aws_access_key=YOUR_ACTUAL_AWS_ACCESS_KEY_ID" \
+          -var="aws_secret_key=YOUR_ACTUAL_AWS_SECRET_ACCESS_KEY"
 
     # --- STEP 4: HARD APPLY ON PUSH/MERGE ---
     - name: Terraform Apply (Infrastructure Provisioning)
@@ -66,18 +57,14 @@ jobs:
       working-directory: ./terraform
       run: |
         terraform apply -auto-approve \
-          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
-          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY_ID }}"
-
+          -var="aws_access_key=YOUR_ACTUAL_AWS_ACCESS_KEY_ID" \
+          -var="aws_secret_key=YOUR_ACTUAL_AWS_SECRET_ACCESS_KEY"
 
     # --- STEP 5: EXTRACT DYNAMIC PARAMETERS ---
     - name: Fetch Dynamic Infrastructure Parameters
       if: github.event_name == 'push'
       id: infra-vars
       working-directory: ./terraform
-      env:
-        TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY_ID }}
       run: |
         EC2_IP=$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=$EC2_IP" >> $GITHUB_ENV
