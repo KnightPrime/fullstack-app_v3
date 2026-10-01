@@ -20,7 +20,7 @@ resource "aws_key_pair" "generated_key" {
 
 # Security Group remains identical (allowing HTTP on 80 and SSH on 22)
 resource "aws_security_group" "app_sg" {
-  name        = "app-security-group-docker"
+  name        = "app-security-group-docker-test"
   description = "Allow inbound traffic on port 80 and 22"
 
   ingress {
