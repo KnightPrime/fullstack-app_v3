@@ -27,7 +27,7 @@ jobs:
     - name: Live HTTP Endpoint Verification
       uses: jakejarvis/wait-for-http-action@c1274d81f2113264fa5dc4dfc2d0f5c35b5a75bd
       with:
-        url: "http://\${{ inputs.target_ip }}"
+        url: "http://${{ inputs.target_ip }}"
         timeout: 5000       # Individual ping timeout (5 seconds)
         interval: 10000     # Wait 10 seconds between attempts
         max-attempts: 6     # Retry up to 6 times before failing
