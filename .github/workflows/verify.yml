@@ -1,6 +1,5 @@
 name: Live Application Verification Check
 
-# workflow_run lets this pipeline trigger automatically the moment 'deploy.yml' finishes successfully
 on:
   workflow_run:
     workflows: ["Complete Zero-Dependency GitOps Pipeline"]
@@ -9,33 +8,63 @@ on:
 
 jobs:
   post-deploy-check:
-    # ONLY execute if the parent deployment pipeline actually succeeded
     if: \${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: development
 
     env:
-      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026" # Must exactly match deploy.yml
+      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
 
     steps:
+    # --- TIME THROTTLE GATE ---
+    - name: Throttle Check (Prevent Rapid Duplicate Triggers)
+      id: throttle
+      run: |
+        echo "=== Evaluating Lifecycle Timestamps ==="
+        
+        # 1. Fetch parent workflow completion timestamp
+        PARENT_COMPLETED_AT="\${{ github.event.workflow_run.updated_at }}"
+        echo "Parent deploy workflow completed at: \$PARENT_COMPLETED_AT"
+        
+        # 2. Convert timestamps into Unix seconds
+        PARENT_SECS=\((date -d "\)PARENT_COMPLETED_AT" +%s)
+        CURRENT_SECS=\$(date +%s)
+        
+        # 3. Calculate execution latency gap
+        TIME_GAP=\$((CURRENT_SECS - PARENT_SECS))
+        echo "Time difference between verification and deployment completion: \$TIME_GAP seconds"
+        
+        # 4. Enforce strict 60 second execution fence
+        if [ "\$TIME_GAP" -lt 60 ]; then
+          echo "SKIP_RUN=true" >> \$GITHUB_ENV
+          echo "🛑 NOTICE: This workflow ran recently (\$TIME_GAP seconds ago)."
+          echo "Skipping redundant validation to conserve runner pipeline resources."
+        else
+          echo "SKIP_RUN=false" >> \$GITHUB_ENV
+          echo "✅ Out of throttle zone. Proceeding with endpoint verification rules."
+        fi
+
     - name: Checkout Code
+      if: env.SKIP_RUN != 'true'
       uses: actions/checkout@v4
 
     - name: Configure AWS CLI Credentials
+      if: env.SKIP_RUN != 'true'
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: \${{ env.AWS_REGION }}
 
-    # --- STEP 1: INITIALIZE TERRAFORM TO EXTRACT THE IP ---
     - name: Setup Terraform
+      if: env.SKIP_RUN != 'true'
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_wrapper: false
 
     - name: Terraform Init
+      if: env.SKIP_RUN != 'true'
       working-directory: ./terraform
       run: |
         terraform init \
@@ -44,21 +73,22 @@ jobs:
           -backend-config="region=\${{ env.AWS_REGION }}"
 
     - name: Fetch Live EC2 IP Address
+      if: env.SKIP_RUN != 'true'
       id: fetch-ip
       working-directory: ./terraform
       run: |
         EC2_IP=\$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
 
-    # --- STEP 2: RUN THE AUTOMATED POLL VALIDATION ---
     - name: Live HTTP Endpoint Verification
+      if: env.SKIP_RUN != 'true'
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
         TARGET_URL="http://\${{ env.EC2_PUBLIC_IP }}"
         MAX_RETRIES=6
         RETRY_INTERVAL=10
         
-        for i in (seq 1 MAX_RETRIES); do
+        for i in \((seq 1\)MAX_RETRIES); do
           echo "Attempt \$i/\(MAX_RETRIES: Pinging service at\)TARGET_URL ..."
           HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
           echo "Received HTTP Server Status Code: \$HTTP_STATUS"
@@ -74,9 +104,8 @@ jobs:
         echo "❌ Server is unreachable."
         exit 1
 
-    # --- STEP 3: CREATE THE BEAUTIFUL, CLICKABLE SUMMARY PAGE ---
     - name: Generate Clickable Deployment Dashboard Summary
-      if: always()
+      if: always() && env.SKIP_RUN != 'true'
       run: |
         echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
