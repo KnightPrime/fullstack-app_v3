@@ -24,18 +24,20 @@ jobs:
         echo "=== Launching App Verification Engine ==="
         echo "Target Validation IP Endpoint: \${{ inputs.target_ip }}"
 
-    # --- STEP 2: FIXED AUTOMATED HTTP VALIDATION RETRY LOOP ---
+    # --- STEP 2: HARDENED RETRY POLLING WORKFLOW WITHOUT PARENTHESES OR ESCAPES ---
     - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
         TARGET_URL="http://\${{ inputs.target_ip }}"
         
-        # Hardened sequential verification loop using a clean, standard spacing array format
+        # Pure space-separated sequence loop avoiding fragile math brackets completely
         for i in 1 2 3 4 5 6; do
-          echo "Attempt \(i/6: Pinging service at\)TARGET_URL ..."
+          echo "Attempt i/6: Pinging service at TARGET_URL ..."
           
-          # FIXED: Clean, standard command substitution syntax with zero backslash formatting conflicts
-          HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
+          # Clean, standard flat curl execution writing data directly to a temporary file
+          curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "\$TARGET_URL" > /tmp/status.txt || echo "0" > /tmp/status.txt
+          
+          HTTP_STATUS=\$(cat /tmp/status.txt)
           echo "Received HTTP Server Status Code: \$HTTP_STATUS"
           
           if [ "\$HTTP_STATUS" -eq 200 ]; then
@@ -47,10 +49,10 @@ jobs:
           sleep 10
         done
         
-        echo "❌ Validation failed: Server failed to return a valid response code."
+        echo "❌ Validation failed: Server failed to return a valid status code."
         exit 1
 
-    # --- STEP 3: CONSOLIDATED VISUAL MARKDOWN OVERVIEW GATEWAY ---
+    # --- STEP 3: CREATE THE VISUAL DASHBOARD SUMMARY ---
     - name: Generate Clickable Deployment Dashboard Summary
       if: always()
       run: |
