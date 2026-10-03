@@ -177,7 +177,7 @@ jobs:
   # --- NEW: CALL THE REUSABLE VERIFICATION WORKFLOW ---
   trigger-verification:
     needs: infra-and-deploy # Waits until the primary deployment block finishes completely
-    uses: ./.github/workflows/verify.yml@docker # References the verify file on your active branch
+    uses: ./.github/workflows/verify.yml # References the verify file on your active branch
     with:
       target_ip: ${{ needs.infra-and-deploy.outputs.ec2_public_ip }}
     secrets:
