@@ -22,76 +22,46 @@ jobs:
     - name: Initialization Notice
       run: |
         echo "=== Launching App Verification Engine ==="
-        echo "Triggered by completed parent deployment pipeline execution."
+        echo "Target Validation IP Endpoint: \${{ inputs.target_ip }}"
 
-    # --- STEP 2: NATIVE NODE.JS HTTP POLLING GATEWAY ---
+    # --- STEP 2: FIXED AUTOMATED HTTP VALIDATION RETRY LOOP ---
     - name: Live HTTP Endpoint Verification
-      uses: actions/actions-javascript-action@main
-      with:
-        run: |
-          const http = require('http');
+      run: |
+        echo "=== Launching Automated HTTP Validation Loop ==="
+        TARGET_URL="http://\${{ inputs.target_ip }}"
+        
+        # Hardened sequential verification loop using a clean, standard spacing array format
+        for i in 1 2 3 4 5 6; do
+          echo "Attempt \(i/6: Pinging service at\)TARGET_URL ..."
           
-          // Scrub any residual rogue formatting backslashes out of the input IP string parameters cleanly
-          const rawIp = "\${{ inputs.target_ip }}";
-          const cleanIp = rawIp.replace(/\\/g, "").trim();
-          const targetUrl = `http://${cleanIp}`;
+          # FIXED: Clean, standard command substitution syntax with zero backslash formatting conflicts
+          HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
+          echo "Received HTTP Server Status Code: \$HTTP_STATUS"
           
-          console.log(`Target URL Endpoint: ${targetUrl}`);
+          if [ "\$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Validation successful! Application container is live."
+            exit 0
+          fi
           
-          let attempts = 0;
-          const maxAttempts = 6;
-          
-          function pingService() {
-            attempts++;
-            console.log(`Attempt ${attempts}/${maxAttempts}: Pinging service...`);
-            
-            const req = http.get(targetUrl, (res) => {
-              console.log(`Received HTTP Server Status Code: ${res.statusCode}`);
-              if (res.statusCode === 200) {
-                console.log("✅ VALIDATION SUCCESSFUL: Application container is live on port 80!");
-                process.exit(0);
-              }
-              retryOrFail();
-            });
-            
-            req.on('error', (err) => {
-              console.log(`Connection attempt failed due to network latency: ${err.message}`);
-              retryOrFail();
-            });
-            
-            req.setTimeout(5000, () => {
-              console.log("Connection timed out after 5 seconds.");
-              req.destroy();
-            });
-          }
-          
-          function retryOrFail() {
-            if (attempts >= maxAttempts) {
-              console.log("❌ VALIDATION FAILED: Application failed to return 200 OK within the window.");
-              process.exit(1);
-            }
-            console.log("Waiting 10 seconds before next retry...");
-            setTimeout(pingService, 10000);
-          }
-          
-          pingService();
+          echo "Waiting 10 seconds before next retry..."
+          sleep 10
+        done
+        
+        echo "❌ Validation failed: Server failed to return a valid response code."
+        exit 1
 
     # --- STEP 3: CONSOLIDATED VISUAL MARKDOWN OVERVIEW GATEWAY ---
     - name: Generate Clickable Deployment Dashboard Summary
       if: always()
       run: |
-        # Strip backslashes cleanly using simple bash variable parameter expansion rules
-        RAW_IP="\${{ inputs.target_ip }}"
-        CLEAN_IP=\${RAW_IP//\\/}
-        
         echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
         echo "| :--- | :--- |" >> \$GITHUB_STEP_SUMMARY
-        echo "| **Target Server IP** | \`$CLEAN_IP\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Target Server IP** | \`${{ inputs.target_ip }}\` |" >> \$GITHUB_STEP_SUMMARY
         echo "| **Environment** | \`development\` |" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "---" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
-        echo "## [👉 Open Application Live Dashboard (HTTP)](http://$CLEAN_IP)" >> \$GITHUB_STEP_SUMMARY
+        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ inputs.target_ip }})" >> \$GITHUB_STEP_SUMMARY
