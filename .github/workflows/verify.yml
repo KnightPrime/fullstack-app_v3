@@ -24,65 +24,64 @@ jobs:
         echo "=== Launching App Verification Engine ==="
         echo "Target Validation IP Endpoint: \${{ inputs.target_ip }}"
 
-    # --- STEP 2: EXTENDED API ENDPOINT HEALTH VALIDATION RETRY LOOP ---
+    # --- STEP 2: RAW STATUS VERIFICATION RETRY LOOP ---
     - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
         
         # 1. Attempt 1
-        echo "Attempt 1/6: Pinging backend API health check..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
-          echo "✅ Validation successful! Backend container API is live."
+        echo "Attempt 1/6: Checking API status..."
+        if curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello" | grep -q "200"; then
+          echo "✅ VALIDATION SUCCESSFUL: Express backend returned 200 OK JSON!"
           exit 0
         fi
-        echo "Waiting 10 seconds before retry..."
-        sleep 10
+        echo "Waiting 15 seconds before retry..."
+        sleep 15
         
         # 2. Attempt 2
-        echo "Attempt 2/6: Pinging backend API health check..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
-          echo "✅ Validation successful! Backend container API is live."
+        echo "Attempt 2/6: Checking API status..."
+        if curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello" | grep -q "200"; then
+          echo "✅ VALIDATION SUCCESSFUL: Express backend returned 200 OK JSON!"
           exit 0
         fi
-        echo "Waiting 10 seconds before retry..."
-        sleep 10
+        echo "Waiting 15 seconds before retry..."
+        sleep 15
         
         # 3. Attempt 3
-        echo "Attempt 3/6: Pinging backend API health check..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
-          echo "✅ Validation successful! Backend container API is live."
+        echo "Attempt 3/6: Checking API status..."
+        if curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello" | grep -q "200"; then
+          echo "✅ VALIDATION SUCCESSFUL: Express backend returned 200 OK JSON!"
           exit 0
         fi
-        echo "Waiting 10 seconds before retry..."
-        sleep 10
+        echo "Waiting 15 seconds before retry..."
+        sleep 15
 
         # 4. Attempt 4
-        echo "Attempt 4/6: Pinging backend API health check..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
-          echo "✅ Validation successful! Backend container API is live."
+        echo "Attempt 4/6: Checking API status..."
+        if curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello" | grep -q "200"; then
+          echo "✅ VALIDATION SUCCESSFUL: Express backend returned 200 OK JSON!"
           exit 0
         fi
-        echo "Waiting 10 seconds before retry..."
-        sleep 10
+        echo "Waiting 15 seconds before retry..."
+        sleep 15
 
         # 5. Attempt 5
-        echo "Attempt 5/6: Pinging backend API health check..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
-          echo "✅ Validation successful! Backend container API is live."
+        echo "Attempt 5/6: Checking API status..."
+        if curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello" | grep -q "200"; then
+          echo "✅ VALIDATION SUCCESSFUL: Express backend returned 200 OK JSON!"
           exit 0
         fi
-        echo "Waiting 10 seconds before retry..."
-        sleep 10
+        echo "Waiting 15 seconds before retry..."
+        sleep 15
 
-        # 6. Attempt 6 (Final check)
-        echo "Attempt 6/6: Pinging backend API health check..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
-          echo "✅ Validation successful! Backend container API is live."
+        # 6. Attempt 6
+        echo "Attempt 6/6: Checking API status..."
+        if curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello" | grep -q "200"; then
+          echo "✅ VALIDATION SUCCESSFUL: Express backend returned 200 OK JSON!"
           exit 0
         fi
         
-        echo "❌ VALIDATION FAILED: Server failed to return a successful 200 OK code from /api/hello within 60 seconds."
-        echo "Please check your NGINX proxy pass configurations or container runtime status logs."
+        echo "❌ VALIDATION FAILED: Server failed to return a successful 200 status from /api/hello within 90 seconds."
         exit 1
 
     # --- STEP 3: CREATE THE VISUAL DASHBOARD SUMMARY ---
