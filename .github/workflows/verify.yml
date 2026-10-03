@@ -14,7 +14,7 @@ jobs:
 
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
-      AWS_REGION: "us-east-1"
+      AWS_REGION: "us-east-1" # FIXED: Wrapped cleanly in standard quotes with zero hidden slashes
 
     steps:
     # --- STEP 1: INITIAL LOG VALIDATION ---
