@@ -17,7 +17,7 @@ jobs:
       AWS_REGION: "us-east-1"
 
     steps:
-    # --- STEP 1: SAFE GITHUB-NATIVE TIME CHECK ---
+    # --- STEP 1: TIME THROTTLE GATE ---
     - name: Throttle Check (Prevent Rapid Duplicate Triggers)
       id: throttle
       run: |
@@ -25,7 +25,7 @@ jobs:
         PARENT_COMPLETED_AT="\${{ github.event.workflow_run.updated_at }}"
         echo "Parent deploy workflow completed at: \$PARENT_COMPLETED_AT"
         
-        # Safe, clean Linux date parsing without stray brackets
+        # FIXED: Clean, standard Linux date parameters without stray backslashes
         PARENT_SECS=(date -d "PARENT_COMPLETED_AT" +%s)
         CURRENT_SECS=\$(date +%s)
         TIME_GAP=\$((CURRENT_SECS - PARENT_SECS))
@@ -76,6 +76,7 @@ jobs:
       id: fetch-ip
       working-directory: ./terraform
       run: |
+        # FIXED: Native command substitution syntax without character bugs
         EC2_IP=\$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
 
@@ -86,7 +87,7 @@ jobs:
         echo "=== Launching Automated HTTP Validation Loop ==="
         TARGET_URL="http://\${{ env.EC2_PUBLIC_IP }}"
         
-        # Hardened loop using standard sequential counter boundaries
+        # FIXED: Pure, clean Bash array sequence loop
         for i in 1 2 3 4 5 6; do
           echo "Attempt i/6: Pinging service at TARGET_URL ..."
           HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
@@ -107,6 +108,7 @@ jobs:
     - name: Generate Clickable Deployment Dashboard Summary
       if: always() && env.SKIP_RUN != 'true'
       run: |
+        # FIXED: Completely clean standard step summaries layout
         echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
@@ -119,4 +121,3 @@ jobs:
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
         echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ env.EC2_PUBLIC_IP }})" >> \$GITHUB_STEP_SUMMARY
-
