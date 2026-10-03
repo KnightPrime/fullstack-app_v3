@@ -17,32 +17,27 @@ jobs:
       AWS_REGION: "us-east-1"
 
     steps:
-    # --- STEP 1: TIME THROTTLE GATE ---
+    # --- STEP 1: SAFE GITHUB-NATIVE TIME CHECK ---
     - name: Throttle Check (Prevent Rapid Duplicate Triggers)
       id: throttle
       run: |
         echo "=== Evaluating Lifecycle Timestamps ==="
-        
-        # 1. Fetch parent workflow completion timestamp from context payload
         PARENT_COMPLETED_AT="\${{ github.event.workflow_run.updated_at }}"
         echo "Parent deploy workflow completed at: \$PARENT_COMPLETED_AT"
         
-        # 2. Convert timestamps into Unix seconds safely
+        # Safe, clean Linux date parsing without stray brackets
         PARENT_SECS=(date -d "PARENT_COMPLETED_AT" +%s)
         CURRENT_SECS=\$(date +%s)
-        
-        # 3. Calculate execution latency gap
         TIME_GAP=\$((CURRENT_SECS - PARENT_SECS))
-        echo "Time difference between verification and deployment completion: \$TIME_GAP seconds"
         
-        # 4. Enforce strict 60 second execution fence
+        echo "Time gap evaluated to: \$TIME_GAP seconds"
+        
         if [ "\$TIME_GAP" -lt 60 ]; then
           echo "SKIP_RUN=true" >> \$GITHUB_ENV
-          echo "🛑 NOTICE: This workflow ran recently (\$TIME_GAP seconds ago)."
-          echo "Skipping redundant validation to conserve runner pipeline resources."
+          echo "🛑 Redundant run detected within 60-second window. Skipping."
         else
           echo "SKIP_RUN=false" >> \$GITHUB_ENV
-          echo "✅ Out of throttle zone. Proceeding with endpoint verification rules."
+          echo "✅ Safe to proceed with verification rules."
         fi
 
     # --- STEP 2: REPO CHECKOUT ---
@@ -59,7 +54,7 @@ jobs:
         aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: \${{ env.AWS_REGION }}
 
-    # --- STEP 4: TERRAFORM SPECIFICATION ---
+    # --- STEP 4: TERRAFORM INSTANTIATION ---
     - name: Setup Terraform
       if: env.SKIP_RUN != 'true'
       uses: hashicorp/setup-terraform@v3
@@ -84,32 +79,28 @@ jobs:
         EC2_IP=\$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
 
-    # --- STEP 6: RUN THE HTTP VALIDATION POLLING RETRY LOOP ---
+    # --- STEP 6: CLEAN CURL POLLING RETRY LOOP ---
     - name: Live HTTP Endpoint Verification
       if: env.SKIP_RUN != 'true'
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
         TARGET_URL="http://\${{ env.EC2_PUBLIC_IP }}"
-        MAX_RETRIES=6
-        RETRY_INTERVAL=10
         
-        for i in (seq 1 MAX_RETRIES); do
-          echo "Attempt \$i/\(MAX_RETRIES: Pinging service at\)TARGET_URL ..."
+        # Hardened loop using standard sequential counter boundaries
+        for i in 1 2 3 4 5 6; do
+          echo "Attempt i/6: Pinging service at TARGET_URL ..."
           HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
           echo "Received HTTP Server Status Code: \$HTTP_STATUS"
           
           if [ "\$HTTP_STATUS" -eq 200 ]; then
-            echo "VALIDATION_PASSED=true" >> \$GITHUB_ENV
-            echo "✅ Server is responding cleanly!"
+            echo "✅ Validation successful! Application container is live."
             exit 0
           fi
-          
-          echo "Waiting \$RETRY_INTERVAL seconds before next ping..."
-          sleep \$RETRY_INTERVAL
+          echo "Waiting 10 seconds before next retry..."
+          sleep 10
         done
         
-        echo "VALIDATION_PASSED=false" >> \$GITHUB_ENV
-        echo "❌ Server is unreachable."
+        echo "❌ Validation failed: Server returned an invalid response code."
         exit 1
 
     # --- STEP 7: CREATE THE VISUAL MARKDOWN OVERVIEW GATEWAY ---
@@ -128,3 +119,4 @@ jobs:
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
         echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ env.EC2_PUBLIC_IP }})" >> \$GITHUB_STEP_SUMMARY
+
