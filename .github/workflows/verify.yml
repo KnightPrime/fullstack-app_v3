@@ -1,63 +1,34 @@
 name: Live Application Verification Check
 
 on:
-  workflow_run:
-    workflows: ["Complete Zero-Dependency GitOps Pipeline"]
-    types:
-      - completed
+  # FIXED: Configures this script as a reusable component called by other pipelines
+  workflow_call:
+    inputs:
+      target_ip:
+        required: true
+        type: string
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
 
 jobs:
   post-deploy-check:
-    if: \${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: development # CRITICAL: Ensures this specific script can decrypt your environment secrets
+    environment: development
 
     steps:
-    # --- STEP 1: INITIAL LOG VALIDATION ---
     - name: Initialization Notice
       run: |
         echo "=== Launching App Verification Engine ==="
-        echo "Triggered by completed parent deployment pipeline execution."
+        echo "Target Validation IP Endpoint: \${{ inputs.target_ip }}"
 
-    # --- STEP 2: REPO CHECKOUT ---
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    # --- STEP 3: CONFIGURE AWS AUTHENTICATION ---
-    - name: Configure AWS CLI Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
-
-    # --- STEP 4: TERRAFORM SPECIFICATION ---
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_wrapper: false
-
-    - name: Terraform Init
-      working-directory: ./terraform
-      run: |
-        terraform init \
-          -backend-config="bucket=knightprime-gitops-state-bucket-2026" \
-          -backend-config="key=state/terraform.tfstate" \
-          -backend-config="region=us-east-1"
-
-    # --- STEP 5: FETCH DYNAMIC IP ---
-    - name: Fetch Live EC2 IP Address
-      id: fetch-ip
-      working-directory: ./terraform
-      run: |
-        EC2_IP=\$(terraform output -raw app_public_ip)
-        echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
-
-    # --- STEP 6: CLEAN CURL POLLING RETRY LOOP ---
+    # --- CLEAN CURL POLLING RETRY LOOP ---
     - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
-        TARGET_URL="http://\${{ env.EC2_PUBLIC_IP }}"
+        TARGET_URL="http://\${{ inputs.target_ip }}"
         
         for i in 1 2 3 4 5 6; do
           echo "Attempt i/6: Pinging service at TARGET_URL ..."
@@ -75,7 +46,7 @@ jobs:
         echo "❌ Validation failed: Server returned an invalid response code."
         exit 1
 
-    # --- STEP 7: CREATE THE VISUAL MARKDOWN OVERVIEW GATEWAY ---
+    # --- CREATE THE VISUAL MARKDOWN OVERVIEW GATEWAY ---
     - name: Generate Clickable Deployment Dashboard Summary
       if: always()
       run: |
@@ -83,11 +54,10 @@ jobs:
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
         echo "| :--- | :--- |" >> \$GITHUB_STEP_SUMMARY
-        echo "| **Target Server IP** | \`${{ env.EC2_PUBLIC_IP }}\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Target Server IP** | \`${{ inputs.target_ip }}\` |" >> \$GITHUB_STEP_SUMMARY
         echo "| **Environment** | \`development\` |" >> \$GITHUB_STEP_SUMMARY
-        echo "| **Trigger Branch** | \`${{ github.event.workflow_run.head_branch }}\` |" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "---" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
-        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ env.EC2_PUBLIC_IP }})" >> \$GITHUB_STEP_SUMMARY
+        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ inputs.target_ip }})" >> \$GITHUB_STEP_SUMMARY
