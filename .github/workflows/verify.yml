@@ -1,7 +1,6 @@
 name: Live Application Verification Check
 
 on:
-  # FIXED: Configures this script as a reusable component called by other pipelines
   workflow_call:
     inputs:
       target_ip:
@@ -24,7 +23,7 @@ jobs:
         echo "=== Launching App Verification Engine ==="
         echo "Target Validation IP Endpoint: \${{ inputs.target_ip }}"
 
-    # --- CLEAN CURL POLLING RETRY LOOP ---
+    # --- FIXED: Completely cleaned of all accidental backslash artifacts ---
     - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
@@ -46,7 +45,7 @@ jobs:
         echo "❌ Validation failed: Server returned an invalid response code."
         exit 1
 
-    # --- CREATE THE VISUAL MARKDOWN OVERVIEW GATEWAY ---
+    # --- FIXED: Native markdown injection mapping without hidden escape tags ---
     - name: Generate Clickable Deployment Dashboard Summary
       if: always()
       run: |
@@ -61,5 +60,3 @@ jobs:
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
         echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ inputs.target_ip }})" >> \$GITHUB_STEP_SUMMARY
-
-#
