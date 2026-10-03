@@ -50,24 +50,33 @@ jobs:
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-    # --- STEP 3: ADVANCED VERSIONED S3 BUCKET PURGE LAYER ---
+    # --- STEP 3: BULLETPROOF STREAMING VERSIONED S3 PURGE LAYER ---
     - name: Post-Teardown Persistent S3 Bucket Removal
       if: always() && github.event.inputs.purge_s3_bucket == 'YES'
       run: |
         echo "=== ⚠️ CRITICAL OVERRIDE ACTIVATED: Wiping Versioned State Bucket ==="
         BUCKET="${{ env.STATE_BUCKET_NAME }}"
         
-        echo "1. Querying and removing all hidden object versions..."
-        aws s3api list-object-versions --bucket "$BUCKET" --output json --query 'Versions[].{Key:Key,VersionId:VersionId}' > /tmp/versions.json
-        if [ "$(cat /tmp/versions.json)" != "null" ] && [ -s /tmp/versions.json ]; then
-          aws s3api delete-objects --bucket "$BUCKET" --delete "$(jq '{Objects: .}' /tmp/versions.json)" || true
-        fi
+        # Suspend versioning immediately to block new tracking metadata allocations
+        aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Suspended
         
-        echo "2. Querying and removing all remaining delete markers..."
-        aws s3api list-object-versions --bucket "$BUCKET" --output json --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' > /tmp/delete_markers.json
-        if [ "$(cat /tmp/delete_markers.json)" != "null" ] && [ -s /tmp/delete_markers.json ]; then
-          aws s3api delete-objects --bucket "$BUCKET" --delete "$(jq '{Objects: .}' /tmp/delete_markers.json)" || true
-        fi
+        echo "1. Streaming and deleting all hidden object version slices..."
+        aws s3api list-object-versions --bucket "$BUCKET" --output json | \
+        jq -c '.Versions[]?' | while read -r version; do
+          KEY=$(echo "$version" | jq -r '.Key')
+          VERSION_ID=$(echo "$version" | jq -r '.VersionId')
+          echo "Removing key: $KEY (Version: $VERSION_ID)"
+          aws s3api delete-object --bucket "$BUCKET" --key "$KEY" --version-id "$VERSION_ID" >/dev/null 2>&1 || true
+        done
+        
+        echo "2. Streaming and deleting all lingering delete markers..."
+        aws s3api list-object-versions --bucket "$BUCKET" --output json | \
+        jq -c '.DeleteMarkers[]?' | while read -r marker; do
+          KEY=$(echo "$marker" | jq -r '.Key')
+          VERSION_ID=$(echo "$marker" | jq -r '.VersionId')
+          echo "Removing delete marker for key: $KEY (Version: $VERSION_ID)"
+          aws s3api delete-object --bucket "$BUCKET" --key "$KEY" --version-id "$VERSION_ID" >/dev/null 2>&1 || true
+        done
         
         echo "3. Executing final removal of the completely empty S3 bucket structure..."
         aws s3 rb s3://"$BUCKET" --force
