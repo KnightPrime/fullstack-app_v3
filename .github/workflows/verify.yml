@@ -1,0 +1,92 @@
+name: Live Application Verification Check
+
+# workflow_run lets this pipeline trigger automatically the moment 'deploy.yml' finishes successfully
+on:
+  workflow_run:
+    workflows: ["Complete Zero-Dependency GitOps Pipeline"]
+    types:
+      - completed
+
+jobs:
+  post-deploy-check:
+    # ONLY execute if the parent deployment pipeline actually succeeded
+    if: \${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: development
+
+    env:
+      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026" # Must exactly match deploy.yml
+      AWS_REGION: "us-east-1"
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS CLI Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: \${{ env.AWS_REGION }}
+
+    # --- STEP 1: INITIALIZE TERRAFORM TO EXTRACT THE IP ---
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: |
+        terraform init \
+          -backend-config="bucket=\${{ env.STATE_BUCKET_NAME }}" \
+          -backend-config="key=state/terraform.tfstate" \
+          -backend-config="region=\${{ env.AWS_REGION }}"
+
+    - name: Fetch Live EC2 IP Address
+      id: fetch-ip
+      working-directory: ./terraform
+      run: |
+        EC2_IP=\$(terraform output -raw app_public_ip)
+        echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
+
+    # --- STEP 2: RUN THE AUTOMATED POLL VALIDATION ---
+    - name: Live HTTP Endpoint Verification
+      run: |
+        echo "=== Launching Automated HTTP Validation Loop ==="
+        TARGET_URL="http://\${{ env.EC2_PUBLIC_IP }}"
+        MAX_RETRIES=6
+        RETRY_INTERVAL=10
+        
+        for i in (seq 1 MAX_RETRIES); do
+          echo "Attempt \$i/\(MAX_RETRIES: Pinging service at\)TARGET_URL ..."
+          HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
+          echo "Received HTTP Server Status Code: \$HTTP_STATUS"
+          
+          if [ "\$HTTP_STATUS" -eq 200 ]; then
+            echo "VALIDATION_PASSED=true" >> \$GITHUB_ENV
+            echo "✅ Server is responding cleanly!"
+            exit 0
+          fi
+          sleep \$RETRY_INTERVAL
+        done
+        echo "VALIDATION_PASSED=false" >> \$GITHUB_ENV
+        echo "❌ Server is unreachable."
+        exit 1
+
+    # --- STEP 3: CREATE THE BEAUTIFUL, CLICKABLE SUMMARY PAGE ---
+    - name: Generate Clickable Deployment Dashboard Summary
+      if: always()
+      run: |
+        echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
+        echo "" >> \$GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
+        echo "| :--- | :--- |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Target Server IP** | \`${{ env.EC2_PUBLIC_IP }}\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Environment** | \`development\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Trigger Branch** | \`${{ github.event.workflow_run.head_branch }}\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "" >> \$GITHUB_STEP_SUMMARY
+        echo "---" >> \$GITHUB_STEP_SUMMARY
+        echo "" >> \$GITHUB_STEP_SUMMARY
+        echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
+        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ env.EC2_PUBLIC_IP }})" >> \$GITHUB_STEP_SUMMARY
