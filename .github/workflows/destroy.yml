@@ -2,6 +2,11 @@ name: Destroy Infrastructure (Cleanup)
 
 on:
   workflow_dispatch:
+    inputs:
+      purge_s3_bucket:
+        description: '⚠️ FORCE PURGE S3 STATE BUCKET? (Type YES to completely wipe the S3 bucket from AWS)'
+        required: false
+        default: 'NO'
 
 jobs:
   teardown:
@@ -9,14 +14,13 @@ jobs:
     environment: development
 
     env:
-      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026" # Must exactly match deploy.yml
+      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # --- STEP 1: CONFIGURE AWS AUTHENTICATION ---
     - name: Configure AWS CLI Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -29,7 +33,7 @@ jobs:
       with:
         terraform_wrapper: false
 
-    # --- STEP 2: INITIALIZE THE SHARED STORAGE HOOK ---
+    # --- STEP 1: INITIALIZE SHARED BACKEND CACHE MAPS ---
     - name: Terraform Init
       working-directory: ./terraform
       run: |
@@ -38,7 +42,7 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
-    # --- STEP 3: EXECUTE SECURE TEARDOWN ---
+    # --- STEP 2: SAFE COMPUTE INFRASTRUCTURE TEARDOWN ---
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
@@ -46,3 +50,17 @@ jobs:
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
+    # --- STEP 3: CONDITIONAL EXPEL BOUNDARY FOR STRATEGIC BUCKET WIPING ---
+    - name: Post-Teardown Persistent S3 Bucket Removal
+      if: always() && github.event.inputs.purge_s3_bucket == 'YES'
+      run: |
+        echo "=== ⚠️ CRITICAL OVERRIDE ACTIVATED: Wiping Persistent State Bucket ==="
+        echo "Clearing historical bucket versioning fragments..."
+        
+        # S3 buckets with versioning enabled must be emptied of object versions before deletion
+        aws s3 rm s3://${{ env.STATE_BUCKET_NAME }} --recursive
+        
+        # Complete full structural removal of the empty infrastructure bucket framework
+        echo "Executing total deletion of empty bucket tracking boundaries..."
+        aws s3 rb s3://${{ env.STATE_BUCKET_NAME }} --force
+        echo "✅ S3 State Bucket has been successfully removed from AWS."
