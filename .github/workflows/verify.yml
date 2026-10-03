@@ -10,11 +10,7 @@ jobs:
   post-deploy-check:
     if: \${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: development
-
-    env:
-      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
-      AWS_REGION: "us-east-1" # FIXED: Wrapped cleanly in standard quotes with zero hidden slashes
+    environment: development # CRITICAL: Ensures this specific script can decrypt your environment secrets
 
     steps:
     # --- STEP 1: INITIAL LOG VALIDATION ---
@@ -33,7 +29,7 @@ jobs:
       with:
         aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1 # FIXED: Passed inline string directly to eliminate variable cascading bugs
+        aws-region: us-east-1
 
     # --- STEP 4: TERRAFORM SPECIFICATION ---
     - name: Setup Terraform
@@ -45,9 +41,9 @@ jobs:
       working-directory: ./terraform
       run: |
         terraform init \
-          -backend-config="bucket=\${{ env.STATE_BUCKET_NAME }}" \
+          -backend-config="bucket=knightprime-gitops-state-bucket-2026" \
           -backend-config="key=state/terraform.tfstate" \
-          -backend-config="region=\${{ env.AWS_REGION }}"
+          -backend-config="region=us-east-1"
 
     # --- STEP 5: FETCH DYNAMIC IP ---
     - name: Fetch Live EC2 IP Address
