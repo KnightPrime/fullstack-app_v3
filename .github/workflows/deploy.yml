@@ -175,9 +175,13 @@ jobs:
       ec2_public_ip: ${{ env.EC2_PUBLIC_IP }}
 
   # --- NEW: CALL THE REUSABLE VERIFICATION WORKFLOW ---
+     outputs:
+      ec2_public_ip: ${{ env.EC2_PUBLIC_IP }}
+
+  # --- LOCAL REUSABLE REFERENCE BOUNDARY ---
   trigger-verification:
-    needs: infra-and-deploy # Waits until the primary deployment block finishes completely
-    uses: ./.github/workflows/verify.yml # References the verify file on your active branch
+    needs: infra-and-deploy
+    uses: ./.github/workflows/verify.yml # CRITICAL: No trailing tags, branch names, or hashes here!
     with:
       target_ip: ${{ needs.infra-and-deploy.outputs.ec2_public_ip }}
     secrets:
