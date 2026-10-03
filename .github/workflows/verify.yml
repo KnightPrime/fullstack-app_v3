@@ -17,52 +17,31 @@ jobs:
       AWS_REGION: "us-east-1"
 
     steps:
-    # --- STEP 1: TIME THROTTLE GATE ---
-    - name: Throttle Check (Prevent Rapid Duplicate Triggers)
-      id: throttle
+    # --- STEP 1: INITIAL LOG VALIDATION ---
+    - name: Initialization Notice
       run: |
-        echo "=== Evaluating Lifecycle Timestamps ==="
-        PARENT_COMPLETED_AT="\${{ github.event.workflow_run.updated_at }}"
-        echo "Parent deploy workflow completed at: \$PARENT_COMPLETED_AT"
-        
-        # FIXED: Clean, standard Linux date parameters without stray backslashes
-        PARENT_SECS=(date -d "PARENT_COMPLETED_AT" +%s)
-        CURRENT_SECS=\$(date +%s)
-        TIME_GAP=\$((CURRENT_SECS - PARENT_SECS))
-        
-        echo "Time gap evaluated to: \$TIME_GAP seconds"
-        
-        if [ "\$TIME_GAP" -lt 60 ]; then
-          echo "SKIP_RUN=true" >> \$GITHUB_ENV
-          echo "🛑 Redundant run detected within 60-second window. Skipping."
-        else
-          echo "SKIP_RUN=false" >> \$GITHUB_ENV
-          echo "✅ Safe to proceed with verification rules."
-        fi
+        echo "=== Launching App Verification Engine ==="
+        echo "Triggered by completed parent deployment pipeline execution."
 
     # --- STEP 2: REPO CHECKOUT ---
     - name: Checkout Code
-      if: env.SKIP_RUN != 'true'
       uses: actions/checkout@v4
 
     # --- STEP 3: CONFIGURE AWS AUTHENTICATION ---
     - name: Configure AWS CLI Credentials
-      if: env.SKIP_RUN != 'true'
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: \${{ env.AWS_REGION }}
 
-    # --- STEP 4: TERRAFORM INSTANTIATION ---
+    # --- STEP 4: TERRAFORM SPECIFICATION ---
     - name: Setup Terraform
-      if: env.SKIP_RUN != 'true'
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_wrapper: false
 
     - name: Terraform Init
-      if: env.SKIP_RUN != 'true'
       working-directory: ./terraform
       run: |
         terraform init \
@@ -72,22 +51,18 @@ jobs:
 
     # --- STEP 5: FETCH DYNAMIC IP ---
     - name: Fetch Live EC2 IP Address
-      if: env.SKIP_RUN != 'true'
       id: fetch-ip
       working-directory: ./terraform
       run: |
-        # FIXED: Native command substitution syntax without character bugs
         EC2_IP=\$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
 
     # --- STEP 6: CLEAN CURL POLLING RETRY LOOP ---
     - name: Live HTTP Endpoint Verification
-      if: env.SKIP_RUN != 'true'
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
         TARGET_URL="http://\${{ env.EC2_PUBLIC_IP }}"
         
-        # FIXED: Pure, clean Bash array sequence loop
         for i in 1 2 3 4 5 6; do
           echo "Attempt i/6: Pinging service at TARGET_URL ..."
           HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
@@ -106,9 +81,8 @@ jobs:
 
     # --- STEP 7: CREATE THE VISUAL MARKDOWN OVERVIEW GATEWAY ---
     - name: Generate Clickable Deployment Dashboard Summary
-      if: always() && env.SKIP_RUN != 'true'
+      if: always()
       run: |
-        # FIXED: Completely clean standard step summaries layout
         echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
