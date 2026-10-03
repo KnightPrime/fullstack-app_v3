@@ -21,18 +21,23 @@ jobs:
     - name: Initialization Notice
       run: |
         echo "=== Launching App Verification Engine ==="
-        echo "Target Validation IP Endpoint: \${{ inputs.target_ip }}"
+        echo "Received Input Target IP: \${{ inputs.target_ip }}"
 
-    # --- FIXED: Natively supported standard text matching without any backslash characters ---
+    # --- FIXED: Simplified loop layout with built-in character cleaning ---
     - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
-        TARGET_URL="http://\${{ inputs.target_ip }}"
         
+        # Safely scrub out any rogue backslashes from the incoming text string
+        CLEAN_IP=(echo "{{ inputs.target_ip }}" | tr -d '\\')
+        TARGET_URL="http://\$CLEAN_IP"
+        echo "Sanitized Target Verification Endpoint: \$TARGET_URL"
+        
+        # Hardened loop using simple space separation to avoid shell syntax errors
         for i in 1 2 3 4 5 6; do
           echo "Attempt i/6: Pinging service at TARGET_URL ..."
           
-          # Fetch the raw response headers cleanly
+          # Perform a clean curl check pulling only the three digit HTTP status code
           HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
           echo "Received HTTP Server Status Code: \$HTTP_STATUS"
           
@@ -45,21 +50,21 @@ jobs:
           sleep 10
         done
         
-        echo "❌ Validation failed: Server returned an invalid response code."
+        echo "❌ Validation failed: Server failed to return a valid status code."
         exit 1
 
-    # --- FIXED: Native markdown injection mapping ---
     - name: Generate Clickable Deployment Dashboard Summary
       if: always()
       run: |
+        CLEAN_IP=(echo "{{ inputs.target_ip }}" | tr -d '\\')
         echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
         echo "| :--- | :--- |" >> \$GITHUB_STEP_SUMMARY
-        echo "| **Target Server IP** | \`${{ inputs.target_ip }}\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Target Server IP** | \`$CLEAN_IP\` |" >> \$GITHUB_STEP_SUMMARY
         echo "| **Environment** | \`development\` |" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "---" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
         echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
-        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ inputs.target_ip }})" >> \$GITHUB_STEP_SUMMARY
+        echo "## [👉 Open Application Live Dashboard (HTTP)](http://$CLEAN_IP)" >> \$GITHUB_STEP_SUMMARY
