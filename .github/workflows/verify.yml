@@ -17,18 +17,18 @@ jobs:
       AWS_REGION: "us-east-1"
 
     steps:
-    # --- TIME THROTTLE GATE ---
+    # --- STEP 1: TIME THROTTLE GATE ---
     - name: Throttle Check (Prevent Rapid Duplicate Triggers)
       id: throttle
       run: |
         echo "=== Evaluating Lifecycle Timestamps ==="
         
-        # 1. Fetch parent workflow completion timestamp
+        # 1. Fetch parent workflow completion timestamp from context payload
         PARENT_COMPLETED_AT="\${{ github.event.workflow_run.updated_at }}"
         echo "Parent deploy workflow completed at: \$PARENT_COMPLETED_AT"
         
-        # 2. Convert timestamps into Unix seconds
-        PARENT_SECS=\((date -d "\)PARENT_COMPLETED_AT" +%s)
+        # 2. Convert timestamps into Unix seconds safely
+        PARENT_SECS=(date -d "PARENT_COMPLETED_AT" +%s)
         CURRENT_SECS=\$(date +%s)
         
         # 3. Calculate execution latency gap
@@ -45,10 +45,12 @@ jobs:
           echo "✅ Out of throttle zone. Proceeding with endpoint verification rules."
         fi
 
+    # --- STEP 2: REPO CHECKOUT ---
     - name: Checkout Code
       if: env.SKIP_RUN != 'true'
       uses: actions/checkout@v4
 
+    # --- STEP 3: CONFIGURE AWS AUTHENTICATION ---
     - name: Configure AWS CLI Credentials
       if: env.SKIP_RUN != 'true'
       uses: aws-actions/configure-aws-credentials@v4
@@ -57,6 +59,7 @@ jobs:
         aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: \${{ env.AWS_REGION }}
 
+    # --- STEP 4: TERRAFORM SPECIFICATION ---
     - name: Setup Terraform
       if: env.SKIP_RUN != 'true'
       uses: hashicorp/setup-terraform@v3
@@ -72,6 +75,7 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=\${{ env.AWS_REGION }}"
 
+    # --- STEP 5: FETCH DYNAMIC IP ---
     - name: Fetch Live EC2 IP Address
       if: env.SKIP_RUN != 'true'
       id: fetch-ip
@@ -80,6 +84,7 @@ jobs:
         EC2_IP=\$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
 
+    # --- STEP 6: RUN THE HTTP VALIDATION POLLING RETRY LOOP ---
     - name: Live HTTP Endpoint Verification
       if: env.SKIP_RUN != 'true'
       run: |
@@ -88,7 +93,7 @@ jobs:
         MAX_RETRIES=6
         RETRY_INTERVAL=10
         
-        for i in \((seq 1\)MAX_RETRIES); do
+        for i in (seq 1 MAX_RETRIES); do
           echo "Attempt \$i/\(MAX_RETRIES: Pinging service at\)TARGET_URL ..."
           HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
           echo "Received HTTP Server Status Code: \$HTTP_STATUS"
@@ -98,12 +103,16 @@ jobs:
             echo "✅ Server is responding cleanly!"
             exit 0
           fi
+          
+          echo "Waiting \$RETRY_INTERVAL seconds before next ping..."
           sleep \$RETRY_INTERVAL
         done
+        
         echo "VALIDATION_PASSED=false" >> \$GITHUB_ENV
         echo "❌ Server is unreachable."
         exit 1
 
+    # --- STEP 7: CREATE THE VISUAL MARKDOWN OVERVIEW GATEWAY ---
     - name: Generate Clickable Deployment Dashboard Summary
       if: always() && env.SKIP_RUN != 'true'
       run: |
