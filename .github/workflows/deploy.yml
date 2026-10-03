@@ -170,18 +170,19 @@ jobs:
         echo "CRITICAL: Inspect container execution parameters via: 'sudo docker logs app-runtime'"
         exit 1
 
-    # --- Ensure the primary deployment job shares its dynamic output data ---
+        # --- FIXED: Exports the variable purely as text with no formatting characters ---
     outputs:
       ec2_public_ip: ${{ env.EC2_PUBLIC_IP }}
 
-  # --- NEW: CALL THE REUSABLE VERIFICATION WORKFLOW ---
+  # --- CALL THE REUSABLE VERIFICATION WORKFLOW ---
   trigger-verification:
-    needs: infra-and-deploy # Waits until the primary deployment block finishes completely
-    uses: ./.github/workflows/verify.yml # References the verify file on your active branch
+    needs: infra-and-deploy
+    uses: ./.github/workflows/verify.yml
     with:
       target_ip: ${{ needs.infra-and-deploy.outputs.ec2_public_ip }}
     secrets:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
 
   
