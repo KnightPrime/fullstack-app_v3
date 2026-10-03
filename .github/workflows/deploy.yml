@@ -1,171 +1,94 @@
-name: Complete Zero-Dependency GitOps Pipeline
+name: Live Application Verification Check
 
 on:
-  pull_request:
-    branches: [ Dockerhub ]
-  push:
-    branches: [ Dockerhub ]
+  workflow_run:
+    workflows: ["Complete Zero-Dependency GitOps Pipeline"]
+    types:
+      - completed
 
 jobs:
-  infra-and-deploy:
+  post-deploy-check:
+    # FIXED: Cleaned out the escaping format block so the job parses successfully
+    if: \${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: development
 
-    env:
-      # CHOOSE A GLOBALLY UNIQUE NAME FOR YOUR TERRAFORM STATE BUCKET
-      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
-      AWS_REGION: "us-east-1"
-
     steps:
+    # --- STEP 1: INITIAL LOG VALIDATION ---
+    - name: Initialization Notice
+      run: |
+        echo "=== Launching App Verification Engine ==="
+        echo "Triggered by completed parent deployment pipeline execution."
+
+    # --- STEP 2: REPO CHECKOUT ---
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # --- STEP 1: CONFIGURE AWS CLI CREDENTIALS ---
+    # --- STEP 3: CONFIGURE AWS AUTHENTICATION ---
     - name: Configure AWS CLI Credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+        aws-access-key-id: \${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: \${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1 # FIXED: Passed inline string directly to eliminate variable cascading bugs
 
-    # --- STEP 2: AUTOMATICALLY VERIFY OR CREATE THE S3 STATE BUCKET ---
-    - name: Bootstrap S3 State Bucket
-      run: |
-        echo "Checking if S3 Bucket '${{ env.STATE_BUCKET_NAME }}' exists..."
-        if aws s3api head-bucket --bucket "${{ env.STATE_BUCKET_NAME }}" 2>/dev/null; then
-          echo "Bucket already exists. Proceeding..."
-        else
-          echo "Bucket not found. Creating fresh S3 state architecture bucket..."
-          aws s3api create-bucket \
-            --bucket "${{ env.STATE_BUCKET_NAME }}" \
-            --region "${{ env.AWS_REGION }}"
-            
-          echo "Enabling bucket versioning for safety rollbacks..."
-          aws s3api put-bucket-versioning \
-            --bucket "${{ env.STATE_BUCKET_NAME }}" \
-            --versioning-configuration Status=Enabled
-        fi
-
+    # --- STEP 4: TERRAFORM SPECIFICATION ---
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_wrapper: false
 
-    # --- STEP 3: DYNAMICALLY INITIALIZE BACKEND USING PARTIAL CONFIGS ---
-    - name: Terraform Init (Dynamic S3 Backend Connection)
+    - name: Terraform Init
       working-directory: ./terraform
       run: |
         terraform init \
-          -backend-config="bucket=${{ env.STATE_BUCKET_NAME }}" \
+          -backend-config="bucket=knightprime-gitops-state-bucket-2026" \
           -backend-config="key=state/terraform.tfstate" \
-          -backend-config="region=${{ env.AWS_REGION }}"
+          -backend-config="region=us-east-1"
 
-    # --- STEP 4: DRY RUN PREVIEW ON PR ---
-    - name: Terraform Plan (PR Validation)
-      if: github.event_name == 'pull_request'
+    # --- STEP 5: FETCH DYNAMIC IP ---
+    - name: Fetch Live EC2 IP Address
+      id: fetch-ip
       working-directory: ./terraform
       run: |
-        terraform plan \
-          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
-          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+        EC2_IP=\$(terraform output -raw app_public_ip)
+        echo "EC2_PUBLIC_IP=\(EC2_IP" >> \)GITHUB_ENV
 
-    # --- NEW: PRACTICAL DRIFT AND REBUILD CHECK ---
-    - name: Determine If Infrastructure Rebuild Is Required
-      id: check-infra
-      if: github.event_name == 'push'
-      working-directory: ./terraform
-      run: |
-        # Run plan with detailed exitcode. '|| tr' prevents the script from crashing when changes are found.
-        terraform plan -detailed-exitcode -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" > /dev/null 2>&1 && EXIT_CODE=$? || EXIT_CODE=$?
-        echo "Terraform Exit Code evaluated to: $EXIT_CODE"
-        
-        if [ $EXIT_CODE -eq 0 ]; then
-          echo "INFRA_CHANGED=false" >> $GITHUB_ENV
-          echo "✅ No infrastructure modifications required. Keeping hardware as-is."
-        else
-          echo "INFRA_CHANGED=true" >> $GITHUB_ENV
-          echo "⚠️ Infrastructure drift or structural updates detected. Processing configuration changes..."
-        fi
-
-    # --- STEP 5: RUN APPLY ONLY IF STRUCTURAL CHANGES EXIST ---
-    - name: Terraform Apply (Conditional Infrastructure Provisioning)
-      if: github.event_name == 'push' && env.INFRA_CHANGED == 'true'
-      working-directory: ./terraform
-      run: |
-        terraform apply -auto-approve \
-          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
-          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-          
-    # --- STEP 6: ALWAYS EXTRACT NETWORKS FOR THE APPLICATION CONTAINER ---
-    - name: Fetch Dynamic Infrastructure Parameters
-      if: github.event_name == 'push'
-      id: infra-vars
-      working-directory: ./terraform
-      run: |
-        EC2_IP=$(terraform output -raw app_public_ip)
-        echo "EC2_PUBLIC_IP=$EC2_IP" >> $GITHUB_ENV
-        
-        echo "EC2_SSH_KEY<<EOF" >> $GITHUB_ENV
-        terraform output -raw ec2_private_key >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
-        
-    # --- STEP 7: DOCKER HUB REGISTRY AUTHENTICATION ---
-    - name: Login to Docker Hub
-      if: github.event_name == 'push'
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    # --- STEP 8: BUILD & LAYER COMPILED IMAGES ---
-    - name: Build and Push Docker Image
-      if: github.event_name == 'push'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-
-    # --- STEP 9: PRODUCTION CONTAINER SWAP ---
-    - name: Rollout Application to Live Instance (In-Place Container Swap)
-      if: github.event_name == 'push'
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ env.EC2_PUBLIC_IP }}
-        username: ubuntu
-        key: ${{ env.EC2_SSH_KEY }}
-        script: |
-          until sudo docker info >/dev/null 2>&1; do echo "Waiting for Docker Engine initialization..."; sleep 5; done
-          sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-          sudo docker stop app-runtime 2>/dev/null || true
-          sudo docker rm app-runtime 2>/dev/null || true
-          sudo docker run -d --name app-runtime --restart always -p 80:80 ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-
-    # --- STEP 10: NEW AUTOMATED HEALTH VALIDATION LAYER ---
-    - name: Automated Application Health Validation
-      if: github.event_name == 'push'
+    # --- STEP 6: CLEAN CURL POLLING RETRY LOOP ---
+    - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
-        TARGET_URL="http://${{ env.EC2_PUBLIC_IP }}"
-        MAX_RETRIES=12
-        RETRY_INTERVAL=10
+        TARGET_URL="http://\${{ env.EC2_PUBLIC_IP }}"
         
-        for i in $(seq 1 $MAX_RETRIES); do
-          echo "Attempt $i/$MAX_RETRIES: Pinging service at $TARGET_URL ..."
+        for i in 1 2 3 4 5 6; do
+          echo "Attempt i/6: Pinging service at TARGET_URL ..."
+          HTTP_STATUS=\((curl -s -o /dev/null -w "\%{http_code}" --connect-timeout 5 "\)TARGET_URL") || HTTP_STATUS=0
+          echo "Received HTTP Server Status Code: \$HTTP_STATUS"
           
-          # Perform curl request fetching exclusively the HTTP response status code
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET_URL") || HTTP_STATUS=0
-          echo "Received HTTP Server Status Code: $HTTP_STATUS"
-          
-          if [ "$HTTP_STATUS" -eq 200 ]; then
-            echo "✅ VALIDATION SUCCESSFUL: Fullstack app container is live and healthy on port 80!"
+          if [ "\$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Validation successful! Application container is live."
             exit 0
           fi
-          
-          echo "Service is booting up or unreachable. Waiting $RETRY_INTERVAL seconds before next ping..."
-          sleep $RETRY_INTERVAL
+          echo "Waiting 10 seconds before next retry..."
+          sleep 10
         done
         
-        echo "❌ VALIDATION FAILED: Application failed to return 200 OK within the allocation window."
-        echo "CRITICAL: Inspect container execution parameters via: 'sudo docker logs app-runtime'"
+        echo "❌ Validation failed: Server returned an invalid response code."
         exit 1
+
+    # --- STEP 7: CREATE THE VISUAL MARKDOWN OVERVIEW GATEWAY ---
+    - name: Generate Clickable Deployment Dashboard Summary
+      if: always()
+      run: |
+        echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
+        echo "" >> \$GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
+        echo "| :--- | :--- |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Target Server IP** | \`${{ env.EC2_PUBLIC_IP }}\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Environment** | \`development\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "| **Trigger Branch** | \`${{ github.event.workflow_run.head_branch }}\` |" >> \$GITHUB_STEP_SUMMARY
+        echo "" >> \$GITHUB_STEP_SUMMARY
+        echo "---" >> \$GITHUB_STEP_SUMMARY
+        echo "" >> \$GITHUB_STEP_SUMMARY
+        echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
+        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ env.EC2_PUBLIC_IP }})" >> \$GITHUB_STEP_SUMMARY
