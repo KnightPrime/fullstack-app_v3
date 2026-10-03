@@ -28,7 +28,7 @@ jobs:
     - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
-        TARGET_URL="http://\${{ inputs.target_ip }}"
+        TARGET_URL="http://${{ inputs.target_ip }}"
         
         # Pure space-separated sequence loop avoiding fragile math brackets completely
         for i in 1 2 3 4 5 6; do
