@@ -50,17 +50,25 @@ jobs:
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-    # --- STEP 3: CONDITIONAL EXPEL BOUNDARY FOR STRATEGIC BUCKET WIPING ---
+    # --- STEP 3: ADVANCED VERSIONED S3 BUCKET PURGE LAYER ---
     - name: Post-Teardown Persistent S3 Bucket Removal
       if: always() && github.event.inputs.purge_s3_bucket == 'YES'
       run: |
-        echo "=== ⚠️ CRITICAL OVERRIDE ACTIVATED: Wiping Persistent State Bucket ==="
-        echo "Clearing historical bucket versioning fragments..."
+        echo "=== ⚠️ CRITICAL OVERRIDE ACTIVATED: Wiping Versioned State Bucket ==="
+        BUCKET="${{ env.STATE_BUCKET_NAME }}"
         
-        # S3 buckets with versioning enabled must be emptied of object versions before deletion
-        aws s3 rm s3://${{ env.STATE_BUCKET_NAME }} --recursive
+        echo "1. Querying and removing all hidden object versions..."
+        aws s3api list-object-versions --bucket "$BUCKET" --output json --query 'Versions[].{Key:Key,VersionId:VersionId}' > /tmp/versions.json
+        if [ "$(cat /tmp/versions.json)" != "null" ] && [ -s /tmp/versions.json ]; then
+          aws s3api delete-objects --bucket "$BUCKET" --delete "$(jq '{Objects: .}' /tmp/versions.json)" || true
+        fi
         
-        # Complete full structural removal of the empty infrastructure bucket framework
-        echo "Executing total deletion of empty bucket tracking boundaries..."
-        aws s3 rb s3://${{ env.STATE_BUCKET_NAME }} --force
-        echo "✅ S3 State Bucket has been successfully removed from AWS."
+        echo "2. Querying and removing all remaining delete markers..."
+        aws s3api list-object-versions --bucket "$BUCKET" --output json --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' > /tmp/delete_markers.json
+        if [ "$(cat /tmp/delete_markers.json)" != "null" ] && [ -s /tmp/delete_markers.json ]; then
+          aws s3api delete-objects --bucket "$BUCKET" --delete "$(jq '{Objects: .}' /tmp/delete_markers.json)" || true
+        fi
+        
+        echo "3. Executing final removal of the completely empty S3 bucket structure..."
+        aws s3 rb s3://"$BUCKET" --force
+        echo "✅ SUCCESS: The versioned S3 State Bucket has been completely scrubbed from AWS."
