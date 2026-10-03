@@ -24,39 +24,65 @@ jobs:
         echo "=== Launching App Verification Engine ==="
         echo "Target Validation IP Endpoint: \${{ inputs.target_ip }}"
 
-    # --- STEP 2: BULLETPROOF FLAT CURL VERIFICATION STEP ---
+    # --- STEP 2: EXTENDED API ENDPOINT HEALTH VALIDATION RETRY LOOP ---
     - name: Live HTTP Endpoint Verification
       run: |
         echo "=== Launching Automated HTTP Validation Loop ==="
         
-        # 1. We test attempt 1 immediately. If it passes, the step completes successfully.
-        echo "Attempt 1/3: Pinging service..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}"; then
-          echo "✅ Validation successful! Application container is live."
+        # 1. Attempt 1
+        echo "Attempt 1/6: Pinging backend API health check..."
+        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
+          echo "✅ Validation successful! Backend container API is live."
+          exit 0
+        fi
+        echo "Waiting 10 seconds before retry..."
+        sleep 10
+        
+        # 2. Attempt 2
+        echo "Attempt 2/6: Pinging backend API health check..."
+        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
+          echo "✅ Validation successful! Backend container API is live."
+          exit 0
+        fi
+        echo "Waiting 10 seconds before retry..."
+        sleep 10
+        
+        # 3. Attempt 3
+        echo "Attempt 3/6: Pinging backend API health check..."
+        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
+          echo "✅ Validation successful! Backend container API is live."
+          exit 0
+        fi
+        echo "Waiting 10 seconds before retry..."
+        sleep 10
+
+        # 4. Attempt 4
+        echo "Attempt 4/6: Pinging backend API health check..."
+        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
+          echo "✅ Validation successful! Backend container API is live."
+          exit 0
+        fi
+        echo "Waiting 10 seconds before retry..."
+        sleep 10
+
+        # 5. Attempt 5
+        echo "Attempt 5/6: Pinging backend API health check..."
+        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
+          echo "✅ Validation successful! Backend container API is live."
+          exit 0
+        fi
+        echo "Waiting 10 seconds before retry..."
+        sleep 10
+
+        # 6. Attempt 6 (Final check)
+        echo "Attempt 6/6: Pinging backend API health check..."
+        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}/api/hello"; then
+          echo "✅ Validation successful! Backend container API is live."
           exit 0
         fi
         
-        echo "Waiting 15 seconds before retry..."
-        sleep 15
-        
-        # 2. Test attempt 2
-        echo "Attempt 2/3: Pinging service..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}"; then
-          echo "✅ Validation successful! Application container is live."
-          exit 0
-        fi
-        
-        echo "Waiting 15 seconds before retry..."
-        sleep 15
-        
-        # 3. Test attempt 3. If this fails, the step throws an error code natively to protect the pipeline.
-        echo "Attempt 3/3: Pinging service..."
-        if curl -s -f -o /dev/null --connect-timeout 5 "http://\${{ inputs.target_ip }}"; then
-          echo "✅ Validation successful! Application container is live."
-          exit 0
-        fi
-        
-        echo "❌ VALIDATION FAILED: Server failed to return a successful 200 OK code within the time window."
+        echo "❌ VALIDATION FAILED: Server failed to return a successful 200 OK code from /api/hello within 60 seconds."
+        echo "Please check your NGINX proxy pass configurations or container runtime status logs."
         exit 1
 
     # --- STEP 3: CREATE THE VISUAL DASHBOARD SUMMARY ---
