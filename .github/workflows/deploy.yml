@@ -151,8 +151,12 @@ jobs:
         script: |
           until sudo docker info >/dev/null 2>&1; do echo "Waiting for Docker Engine initialization..."; sleep 5; done
           
+          echo "=== 📊 RESOURCE CHECK: Before Deployment Swap ==="
+          free -h
+          
           echo "=== Executing Zero-Downtime In-Place Rollout ==="
           sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
+          
           
           # 1. Determine active running production slot definitions dynamically
           if sudo docker ps --format '{{.Names}}' | grep -q "app-runtime-blue"; then
@@ -180,6 +184,10 @@ jobs:
             -p $TARGET_PORT:80 \
             ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
           
+          echo "=== 📊 RESOURCE CHECK: Peak Parallel Execution (Both Containers Live) ==="
+          free -h
+          sudo docker stats --no-stream
+
           # 4. Internal Localhost Health Check Loop targeting the isolated new environment slot
           echo "=== Starting Internal Localhost Health Check Loop ==="
           VALID=false
