@@ -1,3 +1,8 @@
+# My Zero-Downtime Fullstack App 🚀
+
+[![Production Deployment Pipeline](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/deploy.yml/badge.badge?branch=docker)](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/deploy.yml)
+[![Live Application Verification](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/verify.yml/badge.svg?branch=docker)](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/verify.yml)
+
 ## fullstack-app_v3
 
 Version 3 of fullstack-app
@@ -40,3 +45,4 @@ Version 3 of fullstack-app
    > This workflow is auto-called by deploy workflow in the very beginning as a required step to be completed before it itself runs.
    > The test workflow outputs a clean, sleek summary dashboard when its finished.
    > If all tests are green, ONLY then the deploy workflow itself is called to create infra and deploy build.
+
