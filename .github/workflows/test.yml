@@ -37,6 +37,7 @@ jobs:
       run: |
         echo "=== Installing Clean Frontend Dependencies ==="
         # FIXED: Changed back to npm ci
+        npm install --no-audit --no-fund
         npm ci
         echo "=== Executing Frontend Test Suites ==="
         CI=true npm test --if-present
