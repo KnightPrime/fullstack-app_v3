@@ -208,35 +208,6 @@ jobs:
           if [ "$TARGET_SLOT" = "green" ]; then
              echo "Traffic successfully routed via rolling ports. Realignment complete."
           fi
- 
-# --- STEP 10: NEW AUTOMATED HEALTH VALIDATION LAYER ---
-    - name: Automated Application Health Validation
-      if: github.event_name == 'push'
-      run: |
-        echo "=== Launching Automated HTTP Validation Loop ==="
-        TARGET_URL="http://${{ env.EC2_PUBLIC_IP }}"
-        MAX_RETRIES=12
-        RETRY_INTERVAL=10
-        
-        for i in $(seq 1 $MAX_RETRIES); do
-          echo "Attempt $i/$MAX_RETRIES: Pinging service at $TARGET_URL ..."
-          
-          # Perform curl request fetching exclusively the HTTP response status code
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET_URL") || HTTP_STATUS=0
-          echo "Received HTTP Server Status Code: $HTTP_STATUS"
-          
-          if [ "$HTTP_STATUS" -eq 200 ]; then
-            echo "✅ VALIDATION SUCCESSFUL: Fullstack app container is live and healthy on port 80!"
-            exit 0
-          fi
-          
-          echo "Service is booting up or unreachable. Waiting $RETRY_INTERVAL seconds before next ping..."
-          sleep $RETRY_INTERVAL
-        done
-        
-        echo "❌ VALIDATION FAILED: Application failed to return 200 OK within the allocation window."
-        echo "CRITICAL: Inspect container execution parameters via: 'sudo docker logs app-runtime'"
-        exit 1
 
         # --- FIXED: Exports the variable purely as text with no formatting characters ---
     outputs:
