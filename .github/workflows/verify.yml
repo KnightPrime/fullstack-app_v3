@@ -29,12 +29,12 @@ jobs:
       run: |
         echo "### 🚀 Production Deployment Live Verification" >> \$GITHUB_STEP_SUMMARY
         echo "" >> \$GITHUB_STEP_SUMMARY
-        echo "| Metric | Value |" >> \$GITHUB_STEP_SUMMARY
-        echo "| :--- | :--- |" >> \$GITHUB_STEP_SUMMARY
-        echo "| **Target Server IP** | \`${{ inputs.target_ip }}\` |" >> \$GITHUB_STEP_SUMMARY
-        echo "| **Environment** | \`development\` |" >> \$GITHUB_STEP_SUMMARY
-        echo "" >> \$GITHUB_STEP_SUMMARY
-        echo "---" >> \$GITHUB_STEP_SUMMARY
-        echo "" >> \$GITHUB_STEP_SUMMARY
-        echo "#### 🔗 Visual Verification Gateway:" >> \$GITHUB_STEP_SUMMARY
-        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ inputs.target_ip }})" >> \$GITHUB_STEP_SUMMARY
+        echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Target Server IP** | \`${{ inputs.target_ip }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Environment** | \`development\` |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "#### 🔗 Visual Verification Gateway:" >> $GITHUB_STEP_SUMMARY
+        echo "## [👉 Open Application Live Dashboard (HTTP)](http://${{ inputs.target_ip }})" >> $GITHUB_STEP_SUMMARY
