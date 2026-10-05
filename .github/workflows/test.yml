@@ -1,7 +1,6 @@
 name: Pre-Deployment Test Suites Validation
 
 on:
-  # Configures this script to be called dynamically by the deploy pipeline
   workflow_call:
 
 jobs:
@@ -12,18 +11,19 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
+    # --- FIXED: Perfect standard indentation layout mapping lock file boundaries ---
     - name: Setup Node.js Environment
-       uses: actions/setup-node@v4
-       with:
-         node-version: 20
-         cache: 'npm'
-         # FIXED: Tells the runner exactly where to find the lock files to stabilize the step
-         cache-dependency-path: |
-           backend/package-lock.json
-           frontend/package-lock.json
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: |
+          backend/package-lock.json
+          frontend/package-lock.json
 
-    # 1. Backend Testing Sequence
+    # --- BACKEND RUNNERS ---
     - name: Run Backend Unit & Integration Tests
+      id: backend_tests
       working-directory: ./backend
       run: |
         echo "=== Installing Clean Backend Dependencies ==="
@@ -31,11 +31,48 @@ jobs:
         echo "=== Executing Backend Test Suites ==="
         npm test --if-present
 
-    # 2. Frontend Testing Sequence
+    # --- FRONTEND RUNNERS ---
     - name: Run Frontend Component & Unit Tests
+      id: frontend_tests
       working-directory: ./frontend
       run: |
         echo "=== Installing Clean Frontend Dependencies ==="
         npm ci
         echo "=== Executing Frontend Test Suites ==="
         CI=true npm test --if-present
+
+    # --- DYNAMIC MARKDOWN TEST DASHBOARD SUMMARY ---
+    - name: Generate Clickable Code Quality Summary Dashboard
+      if: always()
+      run: |
+        echo "### 🧪 Pre-Deploy Code Quality & Testing Metrics" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "This overview records the operational stability checks executed across your project components before infrastructure hand-offs." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Component Suite | Verification Type | Status Mapping |" >> $GITHUB_STEP_SUMMARY
+        echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.backend_tests.outcome }}" = "success" ]; then
+          echo "| **Backend Application API** | Unit & Integration | 🟢 Passed |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ steps.backend_tests.outcome }}" = "skipped" ]; then
+          echo "| **Backend Application API** | Unit & Integration | ⚪ No Tests Script Found |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| **Backend Application API** | Unit & Integration | 🔴 FAILED |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.frontend_tests.outcome }}" = "success" ]; then
+          echo "| **Frontend User Interface** | Component & Virtual DOM | 🟢 Passed |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ steps.frontend_tests.outcome }}" = "skipped" ]; then
+          echo "| **Frontend User Interface** | Component & Virtual DOM | ⚪ No Tests Script Found |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| **Frontend User Interface** | Component & Virtual DOM | 🔴 FAILED |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.backend_tests.outcome }}" = "success" ] && [ "${{ steps.frontend_tests.outcome }}" = "success" ]; then
+          echo "## ✅ GATEWAY CLEAR: Code quality satisfies staging expectations. Handing off execution to the cloud provisioning engines." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## 🛑 GATEWAY LOCKED: Structural verification anomalies intercepted. Compute infrastructure updates and image hot-swapping suspended." >> $GITHUB_STEP_SUMMARY
+        fi
