@@ -46,3 +46,17 @@ Version 3 of fullstack-app
    > The test workflow outputs a clean, sleek summary dashboard when its finished.
    > If all tests are green, ONLY then the deploy workflow itself is called to create infra and deploy build.
 
+#update 4:
+1. Added & completed the shift from 'infrastructure first' approach that priorities app live time but had slower initial spin time, to a hybrid 'Hot swap : Blue/Green Deployment' model approach with Docker Caching.
+   > This greatly improves both initial spin-up time, as well as near instant updations to the live app. As a new docker build images spins up with updated code without distrupting the live build already running.
+   > This ensures that the users will have a seamless transition from old version to new version without even knowing or experiencing downtime.
+   > Such an approach is crucial under production level servers already running the live app.
+
+2. There is also a change to check memory and resources (cpu, mainly) usage.
+   > This is done in three different points :
+       A. Before the creation of new build image i.e. it only has the live usage by currently running version.
+       B. During the swapping of build containers, this one is most important : as both old/live build and new/update builds are present concurrently for a very short period of time. This however, can use much more memory (almost 2x) than normal.
+       C. After the swap, when handshake is done. This ensures the new build going live isn't over-consuming resources.
+   > As long as there is sufficient memory available, no server down or any other problems will crop up.
+
+3. Added a live health view label markdown to README itself. (beta).
