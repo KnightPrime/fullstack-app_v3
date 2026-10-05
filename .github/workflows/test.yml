@@ -13,10 +13,14 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup Node.js Environment
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-        cache: 'npm' # Uses GitHub's internal cache framework to speed up dependencies
+       uses: actions/setup-node@v4
+       with:
+         node-version: 20
+         cache: 'npm'
+         # FIXED: Tells the runner exactly where to find the lock files to stabilize the step
+         cache-dependency-path: |
+           backend/package-lock.json
+           frontend/package-lock.json
 
     # 1. Backend Testing Sequence
     - name: Run Backend Unit & Integration Tests
