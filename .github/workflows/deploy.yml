@@ -7,7 +7,13 @@ on:
     branches: [ Dockerhub ]
 
 jobs:
+  # --- NEW: INITIAL AUTOMATED GUARDRAIL JOB (Spins up first) ---
+  validate-code-tests:
+    uses: ./.github/workflows/test.yml # Local reusable file hook without trailing branch tags
+
+  # --- MODIFIED DEPLOYMENT JOB: Only executes if tests go green ---
   infra-and-deploy:
+    needs: validate-code-tests # CRITICAL FENCE: Blocks deployment if code testing fails
     runs-on: ubuntu-latest
     environment: development
 
