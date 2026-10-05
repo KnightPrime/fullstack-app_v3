@@ -33,3 +33,10 @@ Version 3 of fullstack-app
    > When destroy workflow is activated, the workflow generates a prompt asking permission to whether destroy the bucket as well or not.
    > By default, its set to NO.
    > When bucket deletion is needed, manual authorization via answering prompt as YES is required.
+
+#update 3:
+1. Added package locks for both frontend and backend to code.
+2. Added a new testing workflow to perform integration and unit tests before build is deployed.
+   > This workflow is auto-called by deploy workflow in the very beginning as a required step to be completed before it itself runs.
+   > The test workflow outputs a clean, sleek summary dashboard when its finished.
+   > If all tests are green, ONLY then the deploy workflow itself is called to create infra and deploy build.
