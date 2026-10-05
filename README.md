@@ -1,7 +1,6 @@
 # My Zero-Downtime Fullstack App 🚀
 
 [![Production Deployment Pipeline](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/deploy.yml/badge.badge?branch=docker)](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/deploy.yml)
-
 [![Live Application Verification](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/verify.yml/badge.svg?branch=docker)](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/verify.yml)
 
 # fullstack-app_v3
