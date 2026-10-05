@@ -1,0 +1,37 @@
+name: Pre-Deployment Test Suites Validation
+
+on:
+  # Configures this script to be called dynamically by the deploy pipeline
+  workflow_call:
+
+jobs:
+  run-application-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js Environment
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm' # Uses GitHub's internal cache framework to speed up dependencies
+
+    # 1. Backend Testing Sequence
+    - name: Run Backend Unit & Integration Tests
+      working-directory: ./backend
+      run: |
+        echo "=== Installing Clean Backend Dependencies ==="
+        npm ci
+        echo "=== Executing Backend Test Suites ==="
+        npm test --if-present
+
+    # 2. Frontend Testing Sequence
+    - name: Run Frontend Component & Unit Tests
+      working-directory: ./frontend
+      run: |
+        echo "=== Installing Clean Frontend Dependencies ==="
+        npm ci
+        echo "=== Executing Frontend Test Suites ==="
+        CI=true npm test --if-present
