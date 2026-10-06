@@ -19,7 +19,8 @@ on:
 jobs:
   teardown:
     runs-on: ubuntu-latest
-    # FIXED: Removed the top-level dynamic environment tag to prevent silent fallback overrides
+    # FIXED: Re-enables dynamic environment binding so GitHub successfully decrypts your AWS keys
+    environment: ${{ github.event.inputs.target_env }} 
 
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
@@ -36,12 +37,12 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    # --- STEP 1: INITIALIZE SHARED BACKEND STATE MAPS ---
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_wrapper: false
 
+    # --- STEP 1: INITIALIZE SHARED BACKEND STATE MAPS ---
     - name: Terraform Init
       working-directory: ./terraform
       run: |
@@ -50,11 +51,11 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
-    # --- STEP 2: HARDENED WORKSPACE RESOLVER WITH EXPLICIT ENFORCEMENT ---
+    # --- STEP 2: FIXED WORKSPACE RESOLVER WITH DYNAMIC ENVIRONMENT MAPPING ---
     - name: Switch to Target Infrastructure Workspace
       working-directory: ./terraform
       run: |
-        # Natively map the dropdown selections directly to your actual S3 state workspace names
+        # Map the dropdown value to the exact internal S3 workspace folder names
         if [ "${{ github.event.inputs.target_env }}" = "staging-sandbox" ]; then
           REAL_WORKSPACE="staging"
         else
@@ -64,15 +65,15 @@ jobs:
         echo "=== Activating Workspace State Partition: $REAL_WORKSPACE ==="
         echo "RESOLVED_ENV=$REAL_WORKSPACE" >> $GITHUB_ENV
         
-        # Explicitly pull down and target the exact workspace partition state map
+        # Pull down and select the correct environment workspace partition state map
         terraform workspace select "$REAL_WORKSPACE" || terraform workspace new "$REAL_WORKSPACE"
 
     # --- STEP 3: DECLARATIVE ISOLATED INFRASTRUCTURE TEARDOWN ---
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
-        echo "=== Launching Teardown on Terraform Workspace: ${{ env.RESOLVED_ENV }} ==="
-        terraform workspace select "${{ env.RESOLVED_ENV }}"
+        echo "=== Launching Teardown on Terraform Workspace: $RESOLVED_ENV ==="
+        terraform workspace select "$RESOLVED_ENV"
         terraform destroy -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
