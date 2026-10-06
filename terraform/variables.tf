@@ -25,9 +25,11 @@ data "aws_ami" "ubuntu" {
 */
 
 variable "instance_type" {
-  description = "EC2 Instance Size"
+  description = "EC2 Instance Type & Size"
   type        = string
-  default     = "t3.micro"
+  # Dynamically scales hardware size: t3.micro for staging (cheap), t4g.small for production (heavy)
+  #default = terraform.workspace == "production" ? "t4g.small" : "t3.micro"
+  default = "t3.micro"
 
 }
 
