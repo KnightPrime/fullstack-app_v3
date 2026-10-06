@@ -60,3 +60,6 @@ Version 3 of fullstack-app
    > As long as there is sufficient memory available, no server down or any other problems will crop up.
 
 3. Added a live health view label markdown to README itself. (beta).
+
+#update 5:
+Changed docker build image tag policy to two tags : latest (when applicable) and sha (sha-code to uniquely identify each distinct image).
