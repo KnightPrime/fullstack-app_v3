@@ -60,7 +60,8 @@ resource "aws_security_group" "app_sg" {
 resource "aws_instance" "app_server" {
   ami = data.aws_ami.ubuntu.id
   #instance_type          = var.instance_type
-  instance_type          = terraform.workspace == "production" ? "t3.micro" : "t4g.small"
+#Changed t4g.small to t3.micro for prod, due to ami issues
+  instance_type          = terraform.workspace == "production" ? "t3.micro" : "t3.micro"
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   # COMMENTING OUT THIS LINE TO PREVENT EC2 RECREATION EVERYTIME:
   #user_data_replace_on_change = true
