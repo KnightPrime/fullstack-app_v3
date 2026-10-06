@@ -170,7 +170,7 @@ jobs:
           echo "=== 📊 RESOURCE CHECK: Before Deployment Swap ==="
           free -h
 
-     # Now $TARGET_ENV evaluates perfectly as "staging" or "production" inside the host machine
+          # Now $TARGET_ENV evaluates perfectly as "staging" or "production" inside the host machine
           echo "=== Executing Zero-Downtime Rollout on Environment: $TARGET_ENV ==="
           sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
           
