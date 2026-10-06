@@ -17,14 +17,12 @@ resource "aws_key_pair" "generated_key" {
   public_key = tls_private_key.pipeline_key.public_key_openssh
 }
 
-
-# Security Group remains identical (allowing HTTP on 80 and SSH on 22)
+# --- DYNAMIC SECURITY GROUP SEGMENTATION ---
 resource "aws_security_group" "app_sg" {
-  name        = "app-security-group-docker-test"
-  description = "Allow inbound traffic on port 80 and 22"
+  name        = "knightprime-gitops-sg-${terraform.workspace}"
+  description = "Security boundaries isolated dynamically for ${terraform.workspace} environment"
 
   ingress {
-    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -32,18 +30,17 @@ resource "aws_security_group" "app_sg" {
   }
 
   ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
+    from_port   = 8080
+    to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port   = 5000
-    to_port     = 5000
+    from_port   = 22
+    to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # Hardened to let GitHub runners communicate
   }
 
   egress {
@@ -52,13 +49,20 @@ resource "aws_security_group" "app_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Environment = terraform.workspace
+    ManagedBy   = "Terraform"
+  }
 }
 
 # Launch Clean EC2 Instance executing localized Docker run configurations
 resource "aws_instance" "app_server" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.instance_type
-  vpc_security_group_ids      = [aws_security_group.app_sg.id]
+  ami = data.aws_ami.ubuntu.id
+  #instance_type          = var.instance_type
+#Changed t4g.small to t3.micro for prod, due to ami issues
+  instance_type          = terraform.workspace == "production" ? "t3.micro" : "t3.micro"
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
   # COMMENTING OUT THIS LINE TO PREVENT EC2 RECREATION EVERYTIME:
   #user_data_replace_on_change = true
 
@@ -83,7 +87,8 @@ resource "aws_instance" "app_server" {
               EOF
 
   tags = {
-    Name = "DockerAppServer"
+    Name        = "knightprime-server-${terraform.workspace}"
+    Environment = terraform.workspace
   }
 }
 

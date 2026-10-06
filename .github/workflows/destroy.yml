@@ -3,19 +3,29 @@ name: Destroy Infrastructure (Cleanup)
 on:
   workflow_dispatch:
     inputs:
+      target_env:
+        description: '🌍 Select Target Environment to Destroy'
+        required: true
+        type: choice
+        options:
+          - development # UPDATED: Matches your new sandbox branch naming track
+          - Production
+        default: 'development'
       purge_s3_bucket:
-        description: '⚠️ FORCE PURGE S3 STATE BUCKET? (Type YES to completely wipe the S3 bucket from AWS)'
+        description: '⚠️ FORCE PURGE ENTRIES? (Type YES to wipe the S3 bucket context completely from AWS)'
         required: false
         default: 'NO'
 
 jobs:
   teardown:
     runs-on: ubuntu-latest
-    environment: development
+    # Dynamically maps back to your GitHub Staging Sandbox or Production environments panel profiles
+    environment: ${{ github.event.inputs.target_env }} 
 
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
+      SELECTED_ENV: ${{ github.event.inputs.target_env == 'development' || 'Production' }}
 
     steps:
     - name: Checkout Code
@@ -33,7 +43,7 @@ jobs:
       with:
         terraform_wrapper: false
 
-    # --- STEP 1: INITIALIZE SHARED BACKEND CACHE MAPS ---
+    # --- STEP 1: INITIALIZE SHARED BACKEND STATE MAPS ---
     - name: Terraform Init
       working-directory: ./terraform
       run: |
@@ -42,22 +52,29 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
-    # --- STEP 2: SAFE COMPUTE INFRASTRUCTURE TEARDOWN ---
+    # --- STEP 2: SELECT ENVIRONMENT WORKSPACE PARTITION ---
+    - name: Switch to Target Infrastructure Workspace
+      working-directory: ./terraform
+      run: |
+        echo "=== Activating Workspace State Partition: ${{ env.SELECTED_ENV }} ==="
+        terraform workspace select ${{ env.SELECTED_ENV }}
+
+    # --- STEP 3: DECLARATIVE ISOLATED INFRASTRUCTURE TEARDOWN ---
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
+        terraform workspace select ${{ env.SELECTED_ENV }}
         terraform destroy -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-    # --- STEP 3: BULLETPROOF STREAMING VERSIONED S3 PURGE LAYER ---
+    # --- STEP 4: BULLETPROOF METADATA STREAMING VERSIONED S3 PURGE LAYER ---
     - name: Post-Teardown Persistent S3 Bucket Removal
       if: always() && github.event.inputs.purge_s3_bucket == 'YES'
       run: |
         echo "=== ⚠️ CRITICAL OVERRIDE ACTIVATED: Wiping Versioned State Bucket ==="
         BUCKET="${{ env.STATE_BUCKET_NAME }}"
         
-        # Suspend versioning immediately to block new tracking metadata allocations
         aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Suspended
         
         echo "1. Streaming and deleting all hidden object version slices..."

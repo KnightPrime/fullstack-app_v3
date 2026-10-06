@@ -2,9 +2,9 @@ name: Complete Zero-Dependency GitOps Pipeline
 
 on:
   pull_request:
-    branches: [ Dockerhub ]
+    branches: [ Dockerhub, Dockerhub-prod ]
   push:
-    branches: [ Dockerhub ]
+    branches: [ Dockerhub, Dockerhub-prod ]
 
 jobs:
   # --- NEW: INITIAL AUTOMATED GUARDRAIL JOB (Spins up first) ---
@@ -15,12 +15,15 @@ jobs:
   infra-and-deploy:
     needs: validate-code-tests # CRITICAL FENCE: Blocks deployment if code testing fails
     runs-on: ubuntu-latest
-    environment: development
+    # FIXED: Direct branch-to-environment mapping context parameters
+    environment: ${{ github.ref_name == 'Dockerhub' && 'Production' || 'development' }}
 
     env:
       # CHOOSE A GLOBALLY UNIQUE NAME FOR YOUR TERRAFORM STATE BUCKET
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
+      # Mapped dynamically: "Dockerhub" branch goes to production, any other goes to staging
+      TARGET_ENV: ${{ github.ref_name == 'Dockerhub' && 'Production' || 'development' }}
 
     steps:
     - name: Checkout Code
@@ -66,6 +69,13 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
+# --- SELECTION OF ISOLATED TERRAFORM WORKSPACE SILOS ---
+    - name: Select or Create Environment Workspace Partition
+      working-directory: ./terraform
+      run: |
+        echo "=== Switching to Target Infrastructure Workspace: ${{ env.TARGET_ENV }} ==="
+        terraform workspace select ${{ env.TARGET_ENV }} || terraform workspace new ${{ env.TARGET_ENV }}
+
     # --- STEP 4: DRY RUN PREVIEW ON PR ---
     - name: Terraform Plan (PR Validation)
       if: github.event_name == 'pull_request'
@@ -98,6 +108,7 @@ jobs:
       if: github.event_name == 'push' && env.INFRA_CHANGED == 'true'
       working-directory: ./terraform
       run: |
+        terraform workspace select ${{ env.TARGET_ENV }}
         terraform apply -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
@@ -108,6 +119,7 @@ jobs:
       id: infra-vars
       working-directory: ./terraform
       run: |
+        terraform workspace select ${{ env.TARGET_ENV }}
         EC2_IP=$(terraform output -raw app_public_ip)
         echo "EC2_PUBLIC_IP=$EC2_IP" >> $GITHUB_ENV
         
@@ -128,21 +140,18 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    # --- STEP 8: BUILD & LAYER COMPILED IMAGES ---
+    #--- STEP 8: SECURE CACHED CONTAINER BUILD WITH PERFECTLY ALIGNED MULTILINE TAGS ---
     - name: Build and Push Docker Image
-      if: github.event_name == 'push'
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
         tags: |
           ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }} 
-
-#Added one more tag to implement two tags per pushed build image system
-# FIXED: Virtual cache registry hooks drop sequential compilation latency below 30s
+          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+# FIXED: Virtual cache registry hooks drop sequential compilation latency below 30
 
     # --- STEP 9: PRODUCTION CONTAINER SWAP ---
     - name: Rollout Application to Live Instance (Zero-Downtime Hot-Swap)
@@ -152,15 +161,17 @@ jobs:
         host: ${{ env.EC2_PUBLIC_IP }}
         username: ubuntu
         key: ${{ env.EC2_SSH_KEY }}
+    # FIXED: Explicitly passes the environment string variable into the secure SSH shell environment
+        envs: TARGET_ENV
         script: |
           until sudo docker info >/dev/null 2>&1; do echo "Waiting for Docker Engine initialization..."; sleep 5; done
           
           echo "=== 📊 RESOURCE CHECK: Before Deployment Swap ==="
           free -h
-          
-          echo "=== Executing Zero-Downtime In-Place Rollout ==="
+
+          # Now $TARGET_ENV evaluates perfectly as "staging" or "production" inside the host machine
+          echo "=== Executing Zero-Downtime Rollout on Environment: $TARGET_ENV ==="
           sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-          
           
           # 1. Determine active running production slot definitions dynamically
           if sudo docker ps --format '{{.Names}}' | grep -q "app-runtime-blue"; then
@@ -215,6 +226,7 @@ jobs:
           echo "Dynamic handshake complete. Gracefully decommissioned legacy environment slot: app-runtime-$OLD_SLOT"
           sudo docker stop app-runtime-$OLD_SLOT 2>/dev/null || true
           sudo docker rm app-runtime-$OLD_SLOT 2>/dev/null || true
+          echo "✅ Rollout successful on $TARGET_ENV workspace cluster!"
           
           # 6. Ensure default routing port mapping alignment matches standard web traffic layers
           if [ "$TARGET_SLOT" = "green" ]; then

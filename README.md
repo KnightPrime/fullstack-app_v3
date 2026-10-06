@@ -3,19 +3,19 @@
 [![Production Deployment Pipeline](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/deploy.yml/badge.badge?branch=docker)](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/deploy.yml)
 [![Live Application Verification](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/verify.yml/badge.svg?branch=docker)](https://github.com/KnightPrime/fullstack-app_v3/actions/workflows/verify.yml)
 
-## fullstack-app_v3
+# fullstack-app_v3
 
 Version 3 of fullstack-app
 
 > Uses v2 as template.
 > Created to try & test ci/cd workflows without worrying about build issues, as its already stable in v2.
 >
-#Branch Specific :
+## Branch Specific (Parent : Dockerhub):
 >
 -> This branch is build for the following deployment apparoch : 
   Code -> Git -> GitHub -> IaC -> Terraform -> GitHub Actions -> workflow yaml -> build -> checkout -> AWS infra -> Dockerhub -> Docker deploy -> server.  
 
-#update :
+### update :
 1. Added code for destroy pipeline as well
 
 > Destroy apparoch : 
@@ -28,7 +28,7 @@ Version 3 of fullstack-app
 
 3. Added a validation check to test the app & infra running on successful exection of deploy workflow.
 
-#update 2:
+### update 2:
 1. Added a validation script to check the live app's status and return output in a clickable dashboard with direct link to app url.
 > This is a separate workflow.
 > This script is auto-called by deploy workflow when it finishes its own execution, passing necessary parameters required for successful validation run.
@@ -39,14 +39,14 @@ Version 3 of fullstack-app
    > By default, its set to NO.
    > When bucket deletion is needed, manual authorization via answering prompt as YES is required.
 
-#update 3:
+### update 3:
 1. Added package locks for both frontend and backend to code.
 2. Added a new testing workflow to perform integration and unit tests before build is deployed.
    > This workflow is auto-called by deploy workflow in the very beginning as a required step to be completed before it itself runs.
    > The test workflow outputs a clean, sleek summary dashboard when its finished.
    > If all tests are green, ONLY then the deploy workflow itself is called to create infra and deploy build.
 
-#update 4:
+### update 4:
 1. Added & completed the shift from 'infrastructure first' approach that priorities app live time but had slower initial spin time, to a hybrid 'Hot swap : Blue/Green Deployment' model approach with Docker Caching.
    > This greatly improves both initial spin-up time, as well as near instant updations to the live app. As a new docker build images spins up with updated code without distrupting the live build already running.
    > This ensures that the users will have a seamless transition from old version to new version without even knowing or experiencing downtime.
