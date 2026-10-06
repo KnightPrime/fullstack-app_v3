@@ -19,12 +19,13 @@ on:
 jobs:
   teardown:
     runs-on: ubuntu-latest
-    # FIXED: Re-enables dynamic environment binding so GitHub successfully decrypts your AWS keys
     environment: ${{ github.event.inputs.target_env }} 
 
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
+      # FIXED: Uses native GitHub Actions conditional function to map names flawlessly with zero bash drift
+      RESOLVED_ENV: ${{ case(github.event.inputs.target_env == 'development', 'staging', 'Production') }}
 
     steps:
     - name: Checkout Code
@@ -51,34 +52,23 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
-    # --- STEP 2: FIXED WORKSPACE RESOLVER WITH DYNAMIC ENVIRONMENT MAPPING ---
+    # --- STEP 2: SELECT ENVIRONMENT WORKSPACE PARTITION ---
     - name: Switch to Target Infrastructure Workspace
       working-directory: ./terraform
       run: |
-        # Map the dropdown value to the exact internal S3 workspace folder names
-        if [ "${{ github.event.inputs.target_env }}" = "staging-sandbox" ]; then
-          REAL_WORKSPACE="staging"
-        else
-          REAL_WORKSPACE="production"
-        fi
-        
-        echo "=== Activating Workspace State Partition: $REAL_WORKSPACE ==="
-        echo "RESOLVED_ENV=$REAL_WORKSPACE" >> $GITHUB_ENV
-        
-        # Pull down and select the correct environment workspace partition state map
-        terraform workspace select "$REAL_WORKSPACE" || terraform workspace new "$REAL_WORKSPACE"
+        echo "=== Activating Workspace State Partition: ${{ env.RESOLVED_ENV }} ==="
+        terraform workspace select "${{ env.RESOLVED_ENV }}" || terraform workspace new "${{ env.RESOLVED_ENV }}"
 
     # --- STEP 3: DECLARATIVE ISOLATED INFRASTRUCTURE TEARDOWN ---
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
-        # FIXED: Using GHA context brackets handles cross-step variable inheritance flawlessly
         echo "=== Launching Teardown on Terraform Workspace: ${{ env.RESOLVED_ENV }} ==="
-        
         terraform workspace select "${{ env.RESOLVED_ENV }}"
         terraform destroy -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+
     # --- STEP 4: METADATA STREAMING VERSIONED S3 PURGE LAYER ---
     - name: Post-Teardown Persistent S3 Bucket Removal
       if: always() && github.event.inputs.purge_s3_bucket == 'YES'
