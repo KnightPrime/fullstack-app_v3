@@ -13,7 +13,7 @@ resource "tls_private_key" "pipeline_key" {
 
 # 2. Register the public key component with your AWS EC2 console region
 resource "aws_key_pair" "generated_key" {
-  key_name   = "pipeline-deployed-key"
+  key_name   = "knightprime-gitops-key-${terraform.workspace}"
   public_key = tls_private_key.pipeline_key.public_key_openssh
 }
 
@@ -60,7 +60,7 @@ resource "aws_security_group" "app_sg" {
 resource "aws_instance" "app_server" {
   ami = data.aws_ami.ubuntu.id
   #instance_type          = var.instance_type
-#Changed t4g.small to t3.micro for prod, due to ami issues
+  #Changed t4g.small to t3.micro for prod, due to ami issues
   instance_type          = terraform.workspace == "production" ? "t3.micro" : "t3.micro"
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   # COMMENTING OUT THIS LINE TO PREVENT EC2 RECREATION EVERYTIME:

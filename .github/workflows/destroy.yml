@@ -25,7 +25,7 @@ jobs:
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
-      SELECTED_ENV: ${{ github.event.inputs.target_env == 'development' || 'Production' }}
+      #SELECTED_ENV: ${{ github.event.inputs.target_env == 'development' || 'Production' }}
 
     steps:
     - name: Checkout Code
@@ -52,18 +52,29 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
-    # --- STEP 2: SELECT ENVIRONMENT WORKSPACE PARTITION ---
+   # --- STEP 2: FIXED WORKSPACE PARTITION DYNAMIC MAPPING LOOP ---
     - name: Switch to Target Infrastructure Workspace
       working-directory: ./terraform
       run: |
-        echo "=== Activating Workspace State Partition: ${{ env.SELECTED_ENV }} ==="
-        terraform workspace select ${{ env.SELECTED_ENV }}
+        # 1. Native robust shell evaluation mapping to match your Git branches safely
+        if [ "${{ github.event.inputs.target_env }}" = "staging-sandbox" ]; then
+          REAL_WORKSPACE="staging"
+        else
+          REAL_WORKSPACE="production"
+        fi
+        
+        echo "=== Activating Workspace State Partition: $REAL_WORKSPACE ==="
+        echo "RESOLVED_ENV=$REAL_WORKSPACE" >> $GITHUB_ENV
+        
+        # 2. Select or create the workspace partition cleanly via command parameters
+        terraform workspace select "$REAL_WORKSPACE" || terraform workspace new "$REAL_WORKSPACE" 
 
     # --- STEP 3: DECLARATIVE ISOLATED INFRASTRUCTURE TEARDOWN ---
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
-        terraform workspace select ${{ env.SELECTED_ENV }}
+        # Pulls the environment context safely out of the workflow environment environment files
+        terraform workspace select "${{ env.RESOLVED_ENV }}"
         terraform destroy -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
