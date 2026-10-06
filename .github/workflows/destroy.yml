@@ -8,9 +8,9 @@ on:
         required: true
         type: choice
         options:
-          - staging-sandbox
-          - production
-        default: 'staging-sandbox'
+          - development
+          - Production
+        default: 'development'
       purge_s3_bucket:
         description: '⚠️ FORCE PURGE ENTRIES? (Type YES to wipe the S3 bucket context completely from AWS)'
         required: false
