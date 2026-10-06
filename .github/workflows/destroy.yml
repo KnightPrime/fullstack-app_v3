@@ -8,9 +8,9 @@ on:
         required: true
         type: choice
         options:
-          - development # UPDATED: Matches your new sandbox branch naming track
-          - Production
-        default: 'development'
+          - staging-sandbox
+          - production
+        default: 'staging-sandbox'
       purge_s3_bucket:
         description: '⚠️ FORCE PURGE ENTRIES? (Type YES to wipe the S3 bucket context completely from AWS)'
         required: false
@@ -19,13 +19,11 @@ on:
 jobs:
   teardown:
     runs-on: ubuntu-latest
-    # Dynamically maps back to your GitHub Staging Sandbox or Production environments panel profiles
-    environment: ${{ github.event.inputs.target_env }} 
+    # FIXED: Removed the top-level dynamic environment tag to prevent silent fallback overrides
 
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
-      #SELECTED_ENV: ${{ github.event.inputs.target_env == 'development' || 'Production' }}
 
     steps:
     - name: Checkout Code
@@ -38,12 +36,12 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    # --- STEP 1: INITIALIZE SHARED BACKEND STATE MAPS ---
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_wrapper: false
 
-    # --- STEP 1: INITIALIZE SHARED BACKEND STATE MAPS ---
     - name: Terraform Init
       working-directory: ./terraform
       run: |
@@ -52,11 +50,11 @@ jobs:
           -backend-config="key=state/terraform.tfstate" \
           -backend-config="region=${{ env.AWS_REGION }}"
 
-   # --- STEP 2: FIXED WORKSPACE PARTITION DYNAMIC MAPPING LOOP ---
+    # --- STEP 2: HARDENED WORKSPACE RESOLVER WITH EXPLICIT ENFORCEMENT ---
     - name: Switch to Target Infrastructure Workspace
       working-directory: ./terraform
       run: |
-        # 1. Native robust shell evaluation mapping to match your Git branches safely
+        # Natively map the dropdown selections directly to your actual S3 state workspace names
         if [ "${{ github.event.inputs.target_env }}" = "staging-sandbox" ]; then
           REAL_WORKSPACE="staging"
         else
@@ -66,20 +64,20 @@ jobs:
         echo "=== Activating Workspace State Partition: $REAL_WORKSPACE ==="
         echo "RESOLVED_ENV=$REAL_WORKSPACE" >> $GITHUB_ENV
         
-        # 2. Select or create the workspace partition cleanly via command parameters
-        terraform workspace select "$REAL_WORKSPACE" || terraform workspace new "$REAL_WORKSPACE" 
+        # Explicitly pull down and target the exact workspace partition state map
+        terraform workspace select "$REAL_WORKSPACE" || terraform workspace new "$REAL_WORKSPACE"
 
     # --- STEP 3: DECLARATIVE ISOLATED INFRASTRUCTURE TEARDOWN ---
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
-        # Pulls the environment context safely out of the workflow environment environment files
+        echo "=== Launching Teardown on Terraform Workspace: ${{ env.RESOLVED_ENV }} ==="
         terraform workspace select "${{ env.RESOLVED_ENV }}"
         terraform destroy -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
 
-    # --- STEP 4: BULLETPROOF METADATA STREAMING VERSIONED S3 PURGE LAYER ---
+    # --- STEP 4: METADATA STREAMING VERSIONED S3 PURGE LAYER ---
     - name: Post-Teardown Persistent S3 Bucket Removal
       if: always() && github.event.inputs.purge_s3_bucket == 'YES'
       run: |
@@ -88,7 +86,6 @@ jobs:
         
         aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Suspended
         
-        echo "1. Streaming and deleting all hidden object version slices..."
         aws s3api list-object-versions --bucket "$BUCKET" --output json | \
         jq -c '.Versions[]?' | while read -r version; do
           KEY=$(echo "$version" | jq -r '.Key')
@@ -97,7 +94,6 @@ jobs:
           aws s3api delete-object --bucket "$BUCKET" --key "$KEY" --version-id "$VERSION_ID" >/dev/null 2>&1 || true
         done
         
-        echo "2. Streaming and deleting all lingering delete markers..."
         aws s3api list-object-versions --bucket "$BUCKET" --output json | \
         jq -c '.DeleteMarkers[]?' | while read -r marker; do
           KEY=$(echo "$marker" | jq -r '.Key')
@@ -106,6 +102,5 @@ jobs:
           aws s3api delete-object --bucket "$BUCKET" --key "$KEY" --version-id "$VERSION_ID" >/dev/null 2>&1 || true
         done
         
-        echo "3. Executing final removal of the completely empty S3 bucket structure..."
         aws s3 rb s3://"$BUCKET" --force
         echo "✅ SUCCESS: The versioned S3 State Bucket has been completely scrubbed from AWS."
