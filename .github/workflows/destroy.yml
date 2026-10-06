@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         options:
-          - development
+          - development     # FIXED: Aligned directly to match your real backend infrastructure maps
           - Production
         default: 'development'
       purge_s3_bucket:
@@ -19,13 +19,14 @@ on:
 jobs:
   teardown:
     runs-on: ubuntu-latest
+    # FIXED: Direct clean extraction pattern removes ternary or case function dependency blocks completely
     environment: ${{ github.event.inputs.target_env }} 
 
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
-      # FIXED: Uses native GitHub Actions conditional function to map names flawlessly with zero bash drift
-      RESOLVED_ENV: ${{ case(github.event.inputs.target_env == 'development', 'staging', 'Production') }}
+      # Explicit string assignment guarantees value stability across multi-step shell scopes
+      RESOLVED_ENV: ${{ github.event.inputs.target_env }}
 
     steps:
     - name: Checkout Code
