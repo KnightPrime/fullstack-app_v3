@@ -72,12 +72,13 @@ jobs:
     - name: Terraform Destroy
       working-directory: ./terraform
       run: |
-        echo "=== Launching Teardown on Terraform Workspace: $RESOLVED_ENV ==="
-        terraform workspace select "$RESOLVED_ENV"
+        # FIXED: Using GHA context brackets handles cross-step variable inheritance flawlessly
+        echo "=== Launching Teardown on Terraform Workspace: ${{ env.RESOLVED_ENV }} ==="
+        
+        terraform workspace select "${{ env.RESOLVED_ENV }}"
         terraform destroy -auto-approve \
           -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
           -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
-
     # --- STEP 4: METADATA STREAMING VERSIONED S3 PURGE LAYER ---
     - name: Post-Teardown Persistent S3 Bucket Removal
       if: always() && github.event.inputs.purge_s3_bucket == 'YES'
