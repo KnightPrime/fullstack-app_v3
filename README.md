@@ -61,5 +61,5 @@ Version 3 of fullstack-app
 
 3. Added a live health view label markdown to README itself. (beta).
 
-## Branch specific :
+## Branch specific (Dockerhub-prod):
 This branch is offshoot of Dockerhub, created to simulated 'production-level' infrastructure environments i.e. separate environments for dev/beta and prod/live.
