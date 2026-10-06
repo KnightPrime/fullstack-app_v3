@@ -137,7 +137,9 @@ jobs:
         push: true
         tags: |
           ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }} #Added one more tag to implement two tags per pushed build image system
+          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }} 
+
+#Added one more tag to implement two tags per pushed build image system
 # FIXED: Virtual cache registry hooks drop sequential compilation latency below 30s
         cache-from: type=gha
         cache-to: type=gha,mode=max
