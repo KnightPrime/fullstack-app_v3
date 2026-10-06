@@ -25,7 +25,7 @@ jobs:
     env:
       STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
       AWS_REGION: "us-east-1"
-      SELECTED_ENV: ${{ github.event.inputs.target_env == 'development' && 'dev' || 'Production' }}
+      SELECTED_ENV: ${{ github.event.inputs.target_env == 'development' || 'Production' }}
 
     steps:
     - name: Checkout Code
