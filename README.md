@@ -63,3 +63,4 @@ Version 3 of fullstack-app
 
 #update 5:
 Changed docker build image tag policy to two tags : latest (when applicable) and sha (sha-code to uniquely identify each distinct image).
+
