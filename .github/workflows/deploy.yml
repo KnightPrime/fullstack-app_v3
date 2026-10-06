@@ -140,18 +140,18 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    # --- STEP 8: BUILD & LAYER COMPILED IMAGES ---
+    #--- STEP 8: SECURE CACHED CONTAINER BUILD WITH PERFECTLY ALIGNED MULTILINE TAGS ---
     - name: Build and Push Docker Image
-      if: github.event_name == 'push'
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-              ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }}
-# FIXED: Virtual cache registry hooks drop sequential compilation latency below 30s
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
+          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+# FIXED: Virtual cache registry hooks drop sequential compilation latency below 30
 
     # --- STEP 9: PRODUCTION CONTAINER SWAP ---
     - name: Rollout Application to Live Instance (Zero-Downtime Hot-Swap)
