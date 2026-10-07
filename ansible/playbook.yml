@@ -72,6 +72,13 @@
         name: nginx
         state: present
 
+    # --- FIXED: Grants NGINX the user groups permissions needed to route traffic into Docker ---
+    - name: Add NGINX background system user to the core docker group security permissions
+      user:
+        name: www-data
+        groups: docker
+        append: yes
+
     - name: Generate updated reverse-proxy routing rules template file dynamically
       copy:
         dest: /etc/nginx/sites-available/default
@@ -81,7 +88,6 @@
               listen [::]:80 default_server;
 
               location / {
-                  # FIXED: Points back to loopback since public ports map there cleanly
                   proxy_pass http://127.0.0.1:{{ target_port }};
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
@@ -91,10 +97,10 @@
               }
           }
 
-    - name: Hot-reload NGINX proxy mapping server to route live traffic with zero client friction
+    - name: Completely restart NGINX service to apply fresh user group security mappings
       service:
         name: nginx
-        state: reloaded
+        state: restarted # Changed to restarted to enforce the new user group profiles immediately
 
     # --- PHASE 5: DECOMMISSION LEGACY RUNTIME SITES ---
     - name: Gracefully decommission old legacy container environment slot
