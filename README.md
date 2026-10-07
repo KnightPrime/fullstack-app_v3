@@ -63,3 +63,14 @@ Version 3 of fullstack-app
 
 #update 5:
 Changed docker build image tag policy to two tags : latest (when applicable) and sha (sha-code to uniquely identify each distinct image).
+
+### update 6:
+1. Decoupling of environments, 'production' separated from 'development'.
+> By default, the pushes from this branch will now only trigger deployment to 'development' env.
+>  Only when a pull request is created and merged, resulting in a push to the parent branch, will the code changes be eligible to get in 'production' env.
+> That also, requires manual approval from a reviewer to authorize via manual gate.
+2. The destroy workflow as changed accordingly.
+> It has now options to choose which env to tear down, when activated...and its a required step.
+> The default option is 'development'.
+> Both envs CAN NOT be teared down in same execution of destroy workflow.
+> Tearing down 'production' env, like deploying to it, requires authorization from manual gate.
