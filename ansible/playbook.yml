@@ -1,15 +1,14 @@
 ---
 - name: Harden OS and Execute Zero-Downtime Blue/Green Container Hot-Swap
   hosts: all
-  become: yes # Automatically executes tasks using sudo privileges
+  become: yes
   gather_facts: yes
 
   vars:
-    # Safely forward your Docker Hub username down through the playbook layers
     docker_hub_user: "{{ lookup('env', 'DOCKERHUB_USERNAME') }}"
 
   tasks:
-    # --- PHASE 1: OS SECURITY HARDENING (Idempotent) ---
+    # --- PHASE 1: OS SECURITY HARDENING ---
     - name: Ensure latest security package patches are applied
       apt:
         update_cache: yes
@@ -28,18 +27,16 @@
         tag: latest
         source: pull
 
-    # --- FIXED: Raw tags shield the Docker string parameters from Ansible's compiler engine ---
     - name: Inspect running containers to identify active slot
       command: docker ps --format {% raw %}'{{.Names}}'{% endraw %}
       register: active_containers
       changed_when: false
 
-
     - name: Map target rolling deployment slots dynamically
       set_fact:
         target_slot: "{{ 'green' if 'app-runtime-blue' in active_containers.stdout else 'blue' }}"
         old_slot: "{{ 'blue' if 'app-runtime-blue' in active_containers.stdout else 'green' }}"
-        target_port: "{{ '8080' if 'app-runtime-blue' in active_containers.stdout else '80' }}"
+        target_port: "{{ '8080' if 'app-runtime-blue' in active_containers.stdout else '8000' }}" # Internalized separate target ports
 
     - name: Print deployment routing strategy to console
       debug:
@@ -50,16 +47,16 @@
         name: "app-runtime-{{ target_slot }}"
         state: absent
 
-    - name: Launch updated container parallel mapping instance
+    - name: Launch updated container instance on internal port mapping
       docker_container:
         name: "app-runtime-{{ target_slot }}"
         image: "{{ docker_hub_user }}/fullstack-app:latest"
         state: started
         restart_policy: always
         published_ports:
-          - "{{ target_port }}:80"
+          - "{{ target_port }}:80" # Maps the container safely to an internal host port
 
-    # --- PHASE 3: INTERNAL LOCALHOST HEALTH Handshake ---
+    # --- PHASE 3: INTERNAL LOCALHOST HEALTH HANDSHAKE ---
     - name: Poll container internal health check endpoint
       uri:
         url: "http://localhost:{{ target_port }}/api/hello"
@@ -69,7 +66,36 @@
       retries: 6
       delay: 10
 
-    # --- PHASE 4: CLEAN UP LEGACY RUNTIME ENVIRONMENT BLOCKS ---
+    # --- PHASE 4: DYNAMIC IN-PLACE NGINX REVERSE PROXY SWAP ---
+    - name: Ensure standard NGINX proxy software package is installed on host OS
+      apt:
+        name: nginx
+        state: present
+
+    - name: Generate updated reverse-proxy routing rules template file dynamically
+      copy:
+        dest: /etc/nginx/sites-available/default
+        content: |
+          server {
+              listen 80 default_server;
+              listen [::]:80 default_server;
+
+              location / {
+                  proxy_pass http://127.0.0.1:{{ target_port }};
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+
+    - name: Hot-reload NGINX proxy mapping server to route live traffic with zero client friction
+      service:
+        name: nginx
+        state: reloaded
+
+    # --- PHASE 5: DECOMMISSION LEGACY RUNTIME SITES ---
     - name: Gracefully decommission old legacy container environment slot
       docker_container:
         name: "app-runtime-{{ old_slot }}"
