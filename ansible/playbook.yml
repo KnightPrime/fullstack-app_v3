@@ -28,10 +28,12 @@
         tag: latest
         source: pull
 
+    # --- FIXED: Raw tags shield the Docker string parameters from Ansible's compiler engine ---
     - name: Inspect running containers to identify active slot
-      command: docker ps --format '{{.Names}}'
+      command: docker ps --format {% raw %}'{{.Names}}'{% endraw %}
       register: active_containers
       changed_when: false
+
 
     - name: Map target rolling deployment slots dynamically
       set_fact:
