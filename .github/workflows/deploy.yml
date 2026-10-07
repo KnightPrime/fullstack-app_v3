@@ -140,11 +140,15 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-        # --- STEP 8: ZERO-DOWNTIME ANSIBLE RUNNER OVER SECURE NATIVE SSH ---
+ # --- STEP 8: ZERO-DOWNTIME ANSIBLE RUNNER OVER SECURE NATIVE SSH ---
     - name: Install Official Verified Ansible Core
       run: |
         echo "=== Installing official Ansible binary engine natively ==="
         python3 -m pip install --user ansible-core
+        
+        # FIXED: Installs the required official Docker modules natively via the built-in galaxy broker
+        echo "=== Installing official verified community Docker collection ==="
+        ansible-galaxy collection install community.docker
         
     - name: Generate Local Infrastructure Inventory Map
       run: |
