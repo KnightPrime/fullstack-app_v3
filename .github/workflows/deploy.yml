@@ -140,18 +140,36 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    #--- STEP 8: SECURE CACHED CONTAINER BUILD WITH PERFECTLY ALIGNED MULTILINE TAGS ---
-    - name: Build and Push Docker Image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: |
-          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-# FIXED: Virtual cache registry hooks drop sequential compilation latency below 30
+        # --- STEP 8: ZERO-DOWNTIME ANSIBLE RUNNER OVER SECURE NATIVE SSH ---
+    - name: Install Official Verified Ansible Core
+      run: |
+        echo "=== Installing official Ansible binary engine natively ==="
+        python3 -m pip install --user ansible-core
+        
+    - name: Generate Local Infrastructure Inventory Map
+      run: |
+        echo "=== Writing Dynamic Ansible Inventory ==="
+        mkdir -p ansible
+        echo "[app_servers]" > ansible/inventory.ini
+        echo "${{ env.EC2_PUBLIC_IP }} ansible_user=ubuntu" >> ansible/inventory.ini
+
+    - name: Execute Playbook Automation Loop Natively Over SSH
+      env:
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        ANSIBLE_SSH_KEY: ${{ env.EC2_SSH_KEY }}
+      run: |
+        # 1. Write the memory SSH key down to a temporary runner file path securely
+        echo "$ANSIBLE_SSH_KEY" > /tmp/deploy_key.pem
+        chmod 600 /tmp/deploy_key.pem
+        
+        # 2. Fire the native ansible binary directly with zero third-party plugin bugs
+        ansible-playbook ansible/playbook.yml \
+          -i ansible/inventory.ini \
+          --private-key=/tmp/deploy_key.pem \
+          --ssh-common-args='-o StrictHostKeyChecking=no'
+          
+        # 3. Securely scrub the temporary key trace instantly from runner disk spaces
+        rm -f /tmp/deploy_key.pem
 
     # --- STEP 9: PRODUCTION CONTAINER SWAP ---
     - name: Rollout Application to Live Instance (Zero-Downtime Hot-Swap)
