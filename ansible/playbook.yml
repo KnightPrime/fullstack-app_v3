@@ -36,7 +36,7 @@
       set_fact:
         target_slot: "{{ 'green' if 'app-runtime-blue' in active_containers.stdout else 'blue' }}"
         old_slot: "{{ 'blue' if 'app-runtime-blue' in active_containers.stdout else 'green' }}"
-        target_port: "{{ '8080' if 'app-runtime-blue' in active_containers.stdout else '8000' }}" # Internalized separate target ports
+        target_port: "{{ '8080' if 'app-runtime-blue' in active_containers.stdout else '8000' }}"
 
     - name: Print deployment routing strategy to console
       debug:
@@ -54,7 +54,7 @@
         state: started
         restart_policy: always
         published_ports:
-          - "{{ target_port }}:80" # Maps the container safely to an internal host port
+          - "{{ target_port }}:80"
 
     # --- PHASE 3: INTERNAL LOCALHOST HEALTH HANDSHAKE ---
     - name: Poll container internal health check endpoint
@@ -81,7 +81,8 @@
               listen [::]:80 default_server;
 
               location / {
-                  proxy_pass http://172.17.0.1:{{ target_port }};
+                  # FIXED: Points back to loopback since public ports map there cleanly
+                  proxy_pass http://127.0.0.1:{{ target_port }};
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection 'upgrade';
