@@ -1,0 +1,75 @@
+---
+- name: Harden OS and Execute Zero-Downtime Blue/Green Container Hot-Swap
+  hosts: all
+  become: yes # Automatically executes tasks using sudo privileges
+  gather_facts: yes
+
+  vars:
+    # Safely forward your Docker Hub username down through the playbook layers
+    docker_hub_user: "{{ lookup('env', 'DOCKERHUB_USERNAME') }}"
+
+  tasks:
+    # --- PHASE 1: OS SECURITY HARDENING (Idempotent) ---
+    - name: Ensure latest security package patches are applied
+      apt:
+        update_cache: yes
+        upgrade: safe
+
+    - name: Ensure Docker service is active and enabled on boot
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # --- PHASE 2: BLUE/GREEN LOGICAL CONTAINER MANAGEMENT ---
+    - name: Pull fresh application image from Docker Hub registry
+      docker_image:
+        name: "{{ docker_hub_user }}/fullstack-app"
+        tag: latest
+        source: pull
+
+    - name: Inspect running containers to identify active slot
+      command: docker ps --format '{{.Names}}'
+      register: active_containers
+      changed_when: false
+
+    - name: Map target rolling deployment slots dynamically
+      set_fact:
+        target_slot: "{{ 'green' if 'app-runtime-blue' in active_containers.stdout else 'blue' }}"
+        old_slot: "{{ 'blue' if 'app-runtime-blue' in active_containers.stdout else 'green' }}"
+        target_port: "{{ '8080' if 'app-runtime-blue' in active_containers.stdout else '80' }}"
+
+    - name: Print deployment routing strategy to console
+      debug:
+        msg: "Deploying to slot: app-runtime-{{ target_slot }} on port {{ target_port }}."
+
+    - name: Tear down old historical instances of the target slot if lingering
+      docker_container:
+        name: "app-runtime-{{ target_slot }}"
+        state: absent
+
+    - name: Launch updated container parallel mapping instance
+      docker_container:
+        name: "app-runtime-{{ target_slot }}"
+        image: "{{ docker_hub_user }}/fullstack-app:latest"
+        state: started
+        restart_policy: always
+        published_ports:
+          - "{{ target_port }}:80"
+
+    # --- PHASE 3: INTERNAL LOCALHOST HEALTH Handshake ---
+    - name: Poll container internal health check endpoint
+      uri:
+        url: "http://localhost:{{ target_port }}/api/hello"
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 6
+      delay: 10
+
+    # --- PHASE 4: CLEAN UP LEGACY RUNTIME ENVIRONMENT BLOCKS ---
+    - name: Gracefully decommission old legacy container environment slot
+      docker_container:
+        name: "app-runtime-{{ old_slot }}"
+        state: absent
+      when: old_slot in active_containers.stdout
