@@ -53,13 +53,15 @@
         image: "{{ docker_hub_user }}/fullstack-app:latest"
         state: started
         restart_policy: always
+        # FIXED: Publishes BOTH your frontend port and your permanent backend API port 5000 to the host
         published_ports:
           - "{{ target_port }}:80"
+          - "5000:5000"
 
     # --- PHASE 3: INTERNAL LOCALHOST HEALTH HANDSHAKE ---
     - name: Poll container internal health check endpoint
       uri:
-        url: "http://localhost:{{ target_port }}/api/hello"
+        url: "http://127.0.0" # Pings the Node backend directly on port 5000
         status_code: 200
       register: health_check
       until: health_check.status == 200
@@ -72,7 +74,6 @@
         name: nginx
         state: present
 
-    # --- FIXED: Grants NGINX the user groups permissions needed to route traffic into Docker ---
     - name: Add NGINX background system user to the core docker group security permissions
       user:
         name: www-data
@@ -87,6 +88,17 @@
               listen 80 default_server;
               listen [::]:80 default_server;
 
+              # ROUTE 1: Mandates that all backend API fetch logs route natively directly to Node port 5000
+              location /api/ {
+                  proxy_pass http://127.0.0.1:5000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
+
+              # ROUTE 2: Directs all standard user browser clicks into your active React frontend container slot
               location / {
                   proxy_pass http://127.0.0.1:{{ target_port }};
                   proxy_http_version 1.1;
@@ -100,7 +112,7 @@
     - name: Completely restart NGINX service to apply fresh user group security mappings
       service:
         name: nginx
-        state: restarted # Changed to restarted to enforce the new user group profiles immediately
+        state: restarted
 
     # --- PHASE 5: DECOMMISSION LEGACY RUNTIME SITES ---
     - name: Gracefully decommission old legacy container environment slot
