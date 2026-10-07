@@ -81,7 +81,8 @@
               listen [::]:80 default_server;
 
               location / {
-                  proxy_pass http://127.0.0.1:{{ target_port }};
+# FIXED: Routes traffic through Docker's internal bridge gateway IP to resolve the 502 error
+                  proxy_pass http://172.17.0.1:{{ target_port }};
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection 'upgrade';
