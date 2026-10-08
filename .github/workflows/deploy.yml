@@ -25,6 +25,10 @@ jobs:
       # Mapped dynamically: "Dockerhub" branch goes to production, any other goes to staging
       TARGET_ENV: ${{ github.ref_name == 'Dockerhub' && 'Production' || 'development' }}
 
+      # --- 1. ENSURE OUTPUT IS WIRED TO THE EXPLICIT STEP ID ---
+    outputs:
+      ec2_public_ip: ${{ steps.export-ip.outputs.EC2_PUBLIC_IP }}
+
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
@@ -182,15 +186,19 @@ jobs:
           
         rm -f /tmp/deploy_key.pem
 
-# --- FIXED: Re-instates parameter tracking mapping to unblock verification dashboards ---
+# --- 2. FIXED: TARGETS THE EXPLICIT GITHUB_OUTPUT BUFFER NATIVELY ---
     - name: Expose Dynamic Public IP Target to Pipeline Outputs
+      id: export-ip # Critical identifier used by the outputs mapper above
       working-directory: ./terraform
       run: |
         echo "=== Extracting Live Environment Network Parameters ==="
         terraform workspace select "${{ env.TARGET_ENV }}"
         CURRENT_IP=$(terraform output -raw app_public_ip)
-        echo "EC2_PUBLIC_IP=$CURRENT_IP" >> $GITHUB_ENV
-
+        
+        # Writes directly to the step output register to unblock downstream jobs
+        echo "EC2_PUBLIC_IP=$CURRENT_IP" >> $GITHUB_OUTPUT
+        echo "Successfully exposed public IP target: $CURRENT_IP"
+        
   # --- LOCAL LINKED DOWNSTREAM VERIFICATION COMPONENT ---
   trigger-verification:
     needs: infra-and-deploy
