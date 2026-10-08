@@ -1,0 +1,76 @@
+name: Manage Central Monitoring Cockpit Lifecycle
+
+on:
+  workflow_dispatch:
+    inputs:
+      action_type:
+        description: '⚙️ Select Infrastructure Action'
+        required: true
+        type: choice
+        options:
+          - provision-cockpit
+          - destroy-cockpit
+        default: 'provision-cockpit'
+
+jobs:
+  orchestrate-monitoring:
+    runs-on: ubuntu-latest
+    
+    env:
+      STATE_BUCKET_NAME: "knightprime-gitops-state-bucket-2026"
+      AWS_REGION: "us-east-1"
+      ACTION: ${{ github.event.inputs.action_type }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # --- PHASE 1: AUTHENTICATE SECURELY WITH AWS ---
+    - name: Configure AWS CLI Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+
+    # --- PHASE 2: INITIALIZE ISOLATED S3 STORAGE WORKSPACE PARTITION ---
+    - name: Terraform Init (Monitoring Dedicated State Key)
+      working-directory: ./terraform-monitoring
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ env.STATE_BUCKET_NAME }}" \
+          -backend-config="key=state-monitoring/terraform.tfstate" \
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+    # --- PHASE 3: DECLARATIVE ON-DEMAND AWS COCKPIT PROVISIONING ---
+    - name: Terraform Apply (Provision Cockpit)
+      if: env.ACTION == 'provision-cockpit'
+      working-directory: ./terraform-monitoring
+      run: |
+        echo "=== Launching Isolated Cloud Observability Control Tower ==="
+        terraform apply -auto-approve \
+          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+        
+        # Extract the dynamic public IP to output directly to the run dashboard
+        COCKPIT_IP=$(terraform output -raw monitoring_public_ip)
+        echo "### 📊 Monitoring Cockpit Live!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Dashboard Console | Target URL Link |" >> $GITHUB_STEP_SUMMARY
+        echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Grafana Central Cockpit** | [👉 Open Grafana (Port 3000)](http://$COCKPIT_IP:3000) |" >> $GITHUB_STEP_SUMMARY
+
+    # --- PHASE 4: DECLARATIVE ON-DEMAND AWS TEARDOWN WIPE ---
+    - name: Terraform Destroy (Teardown Cockpit)
+      if: env.ACTION == 'destroy-cockpit'
+      working-directory: ./terraform-monitoring
+      run: |
+        echo "=== ⚠️ CRITICAL WARNING: Dismantling Observability Cloud Cluster ==="
+        terraform destroy -auto-approve \
+          -var="aws_access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+          -var="aws_secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"

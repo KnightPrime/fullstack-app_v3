@@ -1,0 +1,111 @@
+---
+- name: Harden OS and Execute Zero-Downtime Blue/Green Container Hot-Swap
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  vars:
+    docker_hub_user: "{{ lookup('env', 'DOCKERHUB_USERNAME') }}"
+
+  tasks:
+    # --- PHASE 1: OS SECURITY HARDENING ---
+    - name: Ensure latest security package patches are applied
+      apt:
+        update_cache: yes
+        upgrade: safe
+
+    - name: Ensure Docker service is active and enabled on boot
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # --- PHASE 2: BLUE/GREEN LOGICAL CONTAINER MANAGEMENT ---
+    - name: Pull fresh application image from Docker Hub registry
+      docker_image:
+        name: "{{ docker_hub_user }}/fullstack-app"
+        tag: latest
+        source: pull
+
+    - name: Inspect running containers to identify active slot
+      command: docker ps --format {% raw %}'{{.Names}}'{% endraw %}
+      register: active_containers
+      changed_when: false
+
+    - name: Map target rolling deployment slots dynamically
+      set_fact:
+        target_slot: "{{ 'green' if 'app-runtime-blue' in active_containers.stdout else 'blue' }}"
+        old_slot: "{{ 'blue' if 'app-runtime-blue' in active_containers.stdout else 'green' }}"
+        target_port: "{{ '8080' if 'app-runtime-blue' in active_containers.stdout else '8000' }}"
+
+    - name: Print deployment routing strategy to console
+      debug:
+        msg: "Deploying to slot: app-runtime-{{ target_slot }} on port {{ target_port }}."
+
+    - name: Tear down old historical instances of the target slot if lingering
+      docker_container:
+        name: "app-runtime-{{ target_slot }}"
+        state: absent
+
+    - name: Launch updated container instance on internal port mapping
+      docker_container:
+        name: "app-runtime-{{ target_slot }}"
+        image: "{{ docker_hub_user }}/fullstack-app:latest"
+        state: started
+        restart_policy: always
+        published_ports:
+          - "{{ target_port }}:80" # Maps the unified container entryway cleanly to the host
+
+    # --- PHASE 3: INTERNAL LOCALHOST HEALTH HANDSHAKE ---
+    - name: Poll container internal health check endpoint
+      uri:
+        # FIXED: Pings the container's actual exposed entryway port where the API is reverse-proxied
+        url: "http://127.0.0.1:{{ target_port }}/api/hello"
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 6
+      delay: 10
+
+    # --- PHASE 4: DYNAMIC IN-PLACE NGINX REVERSE PROXY SWAP ---
+    - name: Ensure standard NGINX proxy software package is installed on host OS
+      apt:
+        name: nginx
+        state: present
+
+    - name: Add NGINX background system user to the core docker group security permissions
+      user:
+        name: www-data
+        groups: docker
+        append: yes
+
+    - name: Generate updated reverse-proxy routing rules template file dynamically
+      copy:
+        dest: /etc/nginx/sites-available/default
+        content: |
+          server {
+              listen 80 default_server;
+              listen [::]:80 default_server;
+
+              location / {
+                  # FIXED: Routes all traffic cleanly to the unified container port
+                  proxy_pass http://127.0.0.1:{{ target_port }};
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+
+    - name: Completely restart NGINX service to apply fresh user group security mappings
+      service:
+        name: nginx
+        state: restarted
+
+    # --- PHASE 5: DECOMMISSION LEGACY RUNTIME SITES ---
+    - name: Gracefully decommission old legacy container environment slot
+      docker_container:
+        name: "app-runtime-{{ old_slot }}"
+        state: absent
+      when: old_slot in active_containers.stdout
