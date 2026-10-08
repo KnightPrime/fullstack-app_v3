@@ -74,3 +74,5 @@ Changed docker build image tag policy to two tags : latest (when applicable) and
 > The default option is 'development'.
 > Both envs CAN NOT be teared down in same execution of destroy workflow.
 > Tearing down 'production' env, like deploying to it, requires authorization from manual gate.
+
+
