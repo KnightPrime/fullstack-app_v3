@@ -182,6 +182,15 @@ jobs:
           
         rm -f /tmp/deploy_key.pem
 
+# --- FIXED: Re-instates parameter tracking mapping to unblock verification dashboards ---
+    - name: Expose Dynamic Public IP Target to Pipeline Outputs
+      working-directory: ./terraform
+      run: |
+        echo "=== Extracting Live Environment Network Parameters ==="
+        terraform workspace select "${{ env.TARGET_ENV }}"
+        CURRENT_IP=$(terraform output -raw app_public_ip)
+        echo "EC2_PUBLIC_IP=$CURRENT_IP" >> $GITHUB_ENV
+
   # --- LOCAL LINKED DOWNSTREAM VERIFICATION COMPONENT ---
   trigger-verification:
     needs: infra-and-deploy
