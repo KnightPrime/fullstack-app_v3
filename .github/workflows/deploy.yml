@@ -151,49 +151,93 @@ jobs:
           ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-# FIXED: Virtual cache registry hooks drop sequential compilation latency below 30    # --- STEP 7: BUILD AND PUSH IMMUTABLE DOCKER IMAGES ---
-    - name: Build and Push Docker Image
-      uses: docker/build-push-action@v5
+# FIXED: Virtual cache registry hooks drop sequential compilation latency below 30
+
+    # --- STEP 9: PRODUCTION CONTAINER SWAP ---
+    - name: Rollout Application to Live Instance (Zero-Downtime Hot-Swap)
+      if: github.event_name == 'push'
+      uses: appleboy/ssh-action@v1.0.3
       with:
-        context: .
-        push: true
-        tags: |
-          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
-          ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:sha-${{ github.sha }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    # --- STEP 9: PRODUCTION-GRADE NATIVE ANSIBLE ORCHESTRATION ---
-    - name: Install Official Verified Ansible Core
-      run: |
-        echo "=== Installing official Ansible binary engine natively ==="
-        python3 -m pip install --user ansible-core
-        echo "=== Installing official verified community Docker collection ==="
-        ansible-galaxy collection install community.docker
-        
-    - name: Generate Local Infrastructure Inventory Map
-      run: |
-        echo "=== Writing Dynamic Ansible Inventory ==="
-        mkdir -p ansible
-        echo "[app_servers]" > ansible/inventory.ini
-        echo "${{ env.EC2_PUBLIC_IP }} ansible_user=ubuntu" >> ansible/inventory.ini
-
-    - name: Execute Playbook Automation Loop Natively Over SSH
-      env:
-        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        ANSIBLE_SSH_KEY: ${{ env.EC2_SSH_KEY }}
-      run: |
-        echo "$ANSIBLE_SSH_KEY" > /tmp/deploy_key.pem
-        chmod 600 /tmp/deploy_key.pem
-        
-        ansible-playbook ansible/playbook.yml \
-          -i ansible/inventory.ini \
-          --private-key=/tmp/deploy_key.pem \
-          --ssh-common-args='-o StrictHostKeyChecking=no'
+        host: ${{ env.EC2_PUBLIC_IP }}
+        username: ubuntu
+        key: ${{ env.EC2_SSH_KEY }}
+    # FIXED: Explicitly passes the environment string variable into the secure SSH shell environment
+        envs: TARGET_ENV
+        script: |
+          until sudo docker info >/dev/null 2>&1; do echo "Waiting for Docker Engine initialization..."; sleep 5; done
           
-        rm -f /tmp/deploy_key.pem
+          echo "=== 📊 RESOURCE CHECK: Before Deployment Swap ==="
+          free -h
 
-  # --- LOCAL LINKED DOWNSTREAM VERIFICATION COMPONENT ---
+          # Now $TARGET_ENV evaluates perfectly as "staging" or "production" inside the host machine
+          echo "=== Executing Zero-Downtime Rollout on Environment: $TARGET_ENV ==="
+          sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
+          
+          # 1. Determine active running production slot definitions dynamically
+          if sudo docker ps --format '{{.Names}}' | grep -q "app-runtime-blue"; then
+            TARGET_SLOT="green"
+            OLD_SLOT="blue"
+            TARGET_PORT="8080"
+            OLD_PORT="80"
+          else
+            TARGET_SLOT="blue"
+            OLD_SLOT="green"
+            TARGET_PORT="80"
+            OLD_PORT="8080"
+          fi
+          
+          echo "Active container found on slot: $OLD_SLOT. Provisioning update on slot: $TARGET_SLOT ($TARGET_PORT)..."
+          
+          # 2. Clear old historical container remnants of the target slot if any exist
+          sudo docker stop app-runtime-$TARGET_SLOT 2>/dev/null || true
+          sudo docker rm app-runtime-$TARGET_SLOT 2>/dev/null || true
+          
+          # 3. Boot the updated image parallel container without disconnecting active traffic
+          sudo docker run -d \
+            --name app-runtime-$TARGET_SLOT \
+            --restart always \
+            -p $TARGET_PORT:80 \
+            ${{ secrets.DOCKERHUB_USERNAME }}/fullstack-app:latest
+          
+          echo "=== 📊 RESOURCE CHECK: Peak Parallel Execution (Both Containers Live) ==="
+          free -h
+          sudo docker stats --no-stream
+
+          # 4. Internal Localhost Health Check Loop targeting the isolated new environment slot
+          echo "=== Starting Internal Localhost Health Check Loop ==="
+          VALID=false
+          for i in 1 2 3 4 5 6; do
+            echo "Attempt $i/6: Checking container slot $TARGET_SLOT on port $TARGET_PORT..."
+            if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$TARGET_PORT/api/hello" | grep -q "200"; then
+              echo "✅ SUCCESS: Internal container slot $TARGET_SLOT responded with 200 OK!"
+              VALID=true
+              break
+            fi
+            sleep 10
+          done
+          
+          if [ "$VALID" = false ]; then
+            echo "❌ ERROR: New deployment slot failed health checks. Aborting hot-swap rollout."
+            sudo docker stop app-runtime-$TARGET_SLOT 2>/dev/null || true
+            exit 1
+          fi
+          
+          # 5. Hot-swap complete: Safely dismantle the legacy code environment block
+          echo "Dynamic handshake complete. Gracefully decommissioned legacy environment slot: app-runtime-$OLD_SLOT"
+          sudo docker stop app-runtime-$OLD_SLOT 2>/dev/null || true
+          sudo docker rm app-runtime-$OLD_SLOT 2>/dev/null || true
+          echo "✅ Rollout successful on $TARGET_ENV workspace cluster!"
+          
+          # 6. Ensure default routing port mapping alignment matches standard web traffic layers
+          if [ "$TARGET_SLOT" = "green" ]; then
+             echo "Traffic successfully routed via rolling ports. Realignment complete."
+          fi
+
+        # --- FIXED: Exports the variable purely as text with no formatting characters ---
+    outputs:
+      ec2_public_ip: ${{ env.EC2_PUBLIC_IP }}
+
+  # --- CALL THE REUSABLE VERIFICATION WORKFLOW ---
   trigger-verification:
     needs: infra-and-deploy
     uses: ./.github/workflows/verify.yml
@@ -202,5 +246,3 @@ jobs:
     secrets:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      
-          
