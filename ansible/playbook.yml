@@ -53,15 +53,14 @@
         image: "{{ docker_hub_user }}/fullstack-app:latest"
         state: started
         restart_policy: always
-        # FIXED: Publishes BOTH your frontend port and your permanent backend API port 5000 to the host
         published_ports:
-          - "{{ target_port }}:80"
-          - "5000:5000"
+          - "{{ target_port }}:80" # Maps the unified container entryway cleanly to the host
 
     # --- PHASE 3: INTERNAL LOCALHOST HEALTH HANDSHAKE ---
     - name: Poll container internal health check endpoint
       uri:
-        url: "http://127.0.0" # Pings the Node backend directly on port 5000
+        # FIXED: Pings the container's actual exposed entryway port where the API is reverse-proxied
+        url: "http://127.0.0.1:{{ target_port }}/api/hello"
         status_code: 200
       register: health_check
       until: health_check.status == 200
@@ -88,18 +87,8 @@
               listen 80 default_server;
               listen [::]:80 default_server;
 
-              # ROUTE 1: Mandates that all backend API fetch logs route natively directly to Node port 5000
-              location /api/ {
-                  proxy_pass http://127.0.0.1:5000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_cache_bypass $http_upgrade;
-              }
-
-              # ROUTE 2: Directs all standard user browser clicks into your active React frontend container slot
               location / {
+                  # FIXED: Routes all traffic cleanly to the unified container port
                   proxy_pass http://127.0.0.1:{{ target_port }};
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
